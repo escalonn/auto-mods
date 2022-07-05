@@ -191,24 +191,24 @@ static const int ID_SABOTEUR = 706;
 static const int ID_KING = 434;
 static const int ID_RELIC_CART = 944;
 static const int ID_FURIOUS_THE_MONKEY_BOY = 860;
-static const int ID_BAD_NEIGHBOR_PACKED = 730; 
-static const int ID_BAD_NEIGHBOR = 682; 
-static const int ID_GODS_OWN_SLING_PACKED = 729; 
-static const int ID_GODS_OWN_SLING = 683; 
-static const int ID_EMPEROR_IN_A_BARREL = 733; 
-static const int ID_TABINSHWEHTI = 1166; 
-static const int ID_SURYAVARMAN_I = 1162; 
-static const int ID_BAYINNAUNG = 1165; 
-static const int ID_ABRAHA_ELEPHANT = 1071; 
-static const int ID_KHOSRAU = 930; 
-static const int ID_BABUR = 1070; 
-static const int ID_TRISTAN = 1038; 
-static const int ID_GUY_JOSSELYNE = 648; 
+static const int ID_BAD_NEIGHBOR_PACKED = 730;
+static const int ID_BAD_NEIGHBOR = 682;
+static const int ID_GODS_OWN_SLING_PACKED = 729;
+static const int ID_GODS_OWN_SLING = 683;
+static const int ID_EMPEROR_IN_A_BARREL = 733;
+static const int ID_TABINSHWEHTI = 1166;
+static const int ID_SURYAVARMAN_I = 1162;
+static const int ID_BAYINNAUNG = 1165;
+static const int ID_ABRAHA_ELEPHANT = 1071;
+static const int ID_KHOSRAU = 930;
+static const int ID_BABUR = 1070;
+static const int ID_TRISTAN = 1038;
+static const int ID_GUY_JOSSELYNE = 648;
 static const int ID_GUY_LANCELOT = 174;
-static const int ID_GUY_MORDRED = 176; 
-static const int ID_GUY_RICHARD_THE_LIONHEART = 160; 
-static const int ID_HENRY_V = 847; 
-static const int ID_DINH_LE = 1184; 
+static const int ID_GUY_MORDRED = 176;
+static const int ID_GUY_RICHARD_THE_LIONHEART = 160;
+static const int ID_HENRY_V = 847;
+static const int ID_DINH_LE = 1184;
 static const int CLASS_PETARD = 35;
 static const int CLASS_HERO = 25;
 
@@ -415,5 +415,65 @@ static const int16_t SHRIVAMSHA_RIDER = 1751;
 static const int16_t ELITE_SHRIVAMSHA_RIDER = 1753;
 static const int16_t CARAVANSERAI = 1754;
 static const int16_t CAMEL_SCOUT = 1755;
+
+
+static const int16_t HEAVY_CROSSBOWMAN = 493;
+
+static const int16_t SPY = 138;
+static const int16_t NORSE_WARRIOR = 361;
+static const int16_t EASTERN_SWORDSMAN = 894;
+static const int16_t HENRY_II = 1040;
+static const int16_t NINJA = 1145;
+static const int16_t GAJAH_MADA = 1157;
+static const int16_t SUNDA_ROYAL_FIGHTER = 1160;
+static const int16_t JAYAVIRAVARMAN = 1164;
+static const int16_t IROQUOIS_WARRIOR = 1374;
+
+static const int16_t CENTURION = 275;
+static const int16_t RADEN_WIJAYA = 1159;
+static const int16_t CRUSADER_KNIGHT = 1723;
+static const int16_t YOUNG_BABUR = 1768;
+
+static const int16_t DONKEY = 846;
+
+static const int16_t VASCO_DA_GAMA = 203;
+static const int16_t LEIF_ERIKSON = 106;
+static const int16_t ADMIRAL_YI_SUN_SHIN = 844;
+static const int16_t THE_MIDDLEBROOK = 1631;
+
+static const int16_t DAGNAJAN = 1106;
+static const int16_t TABINSHWEHTI = 1166;
+static const int16_t GIRGEN_KHAN = 1269;
+static const int16_t KHAN = 1275;
+static const int16_t IBRAHIM_LODI = 1771;
+static const int16_t SHAYBANI_KHAN = 1772;
+
+static const int16_t MONKBT = 1022;
+
+static const int16_t COW_A = 705;
+static const int16_t COW_B = 1596;
+static const int16_t COW_C = 1598;
+static const int16_t COW_D = 1600;
+static const int16_t GOAT = 1060;
+static const int16_t GOOSE = 1243;
+static const int16_t LLAMA = 305;
+static const int16_t PIG = 1245;
+static const int16_t SHEEP = 594;
+static const int16_t TURKEY = 833;
+static const int16_t WATER_BUFFALO = 1142;
+
+static const int16_t INDESTRUCT = 308;
+static const int16_t PALACE = 1096;
+static const int16_t SANKORE_MADRASAH = 1367;
+static const int16_t TOWER_OF_LONDON = 1368;
+static const int16_t DORMITION_CATHEDRAL = 1369;
+static const int16_t AACHEN_CATHEDRAL = 1622;
+static const int16_t MINARET_OF_JAM = 1773;
+
+static const int16_t FORTIFIED_PALISADE_WALL = 119;
+static const int16_t SEA_GATE = 1382;
+static const int16_t CITY_GATE = 1582;
+
+static const int16_t FIRE_TOWER = 190;
 
 #endif //CREATE_DATA_MOD_IDS_H

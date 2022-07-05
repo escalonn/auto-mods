@@ -11,6 +11,7 @@
 #include "patches/no_wall.h"
 #include "patches/pocket_horse.h"
 #include "patches/random_costs.h"
+#include "patches/show_costs.h"
 #include "patches/teamwork.h"
 
 
@@ -32,6 +33,7 @@ const char *const TEAMWORK = "teamwork";
 const char *const X_256_TECH = "x256";
 const char *const X_3_TECH = "x3";
 const char *const X_9_TECH = "x9";
+const char *const SHOW_COSTS = "show-costs";
 
 vector<string> getModIdentifiers(char *const *argv);
 
@@ -42,8 +44,8 @@ void applyModifications(genie::DatFile *df, const string &modIdentifier);
 
 int main(int argc, char **argv) {
 
-    if (argc < 4) {
-        cout << "Usage: " << argv[0] << " <mod-identifier> source.dat target.dat" << endl;
+    if (argc < 3) {
+        cout << "Usage: " << argv[0] << " <mod-identifier> source.dat [target.dat]" << endl;
         cout << "Where <mod-identifier> is one of the following, or multiple of the following joined by a +:" << endl;
         cout << "    " << COMMUNITY_GAMES << endl;
         cout << "    " << EXPLODING_VILLAGERS << endl;
@@ -62,6 +64,7 @@ int main(int argc, char **argv) {
         cout << "    " << X_3_TECH << endl;
         cout << "    " << X_9_TECH << endl;
         cout << "    " << X_256_TECH << endl;
+        cout << "    " << SHOW_COSTS << endl;
         return 1;
     }
 
@@ -79,9 +82,10 @@ int main(int argc, char **argv) {
         applyModifications(df, modIdentifier);
     }
 
-
-    cout << "Saving as " << argv[3] << "..." << endl;
-    df->saveAs(argv[3]);
+    if (argc > 4) {
+        cout << "Saving as " << argv[3] << "..." << endl;
+        df->saveAs(argv[3]);
+    }
 
     cout << "Done." << endl;
     return 0;
@@ -127,6 +131,8 @@ void applyModifications(genie::DatFile *df, const string &modIdentifier) {
         duplicateTechs(df, 9);
     } else if (X_256_TECH == modIdentifier) {
         duplicateTechs(df, 256);
+    } else if (SHOW_COSTS == modIdentifier) {
+        showCosts(df);
     } else {
         cout << "Unknown mod identifier: '" << modIdentifier << "'" << endl;
     }
