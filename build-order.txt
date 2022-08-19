@@ -1,0 +1,59 @@
+dark
+++++++++mill
+
+feudal
+market
+
+castle age
+---------mill
+(++++++barracks)
+++blacksmith
+++town center
+
+imperial age
++++++++house
++++++++stable
+
+-------------------------------------------
+
+by unit [separate file, mostly as-is, in cheapest cost order]
+    [i think it's best to try to ensure there is no duplicate data in one file, for ctrl+f purposes]
+
+-------------------------------------------
+
+by age [separate file]
+    dark age [w/ cost]
+        house [order buildings by villager build ui location]
+        (*)lumber camp [mark those required for age-up]
+        (*)mill
+        (*)barracks
+        (*)dock
+        town center
+    feudal age
+        house
+        barracks
+
+--------------------------------------------
+
+by building [separate file]
+    house
+        dark age
+        feudal age
+        castle age
+        imperial age
+    archery range
+        feudal age
+        (*)castle age [cheapest]
+        (!)imperial age [greatest cost increase over an earlier version]
+        archer [order units/techs by train/research ui location]
+        xbow tech
+        xbow
+        arb tech
+        arb
+        thumb ring tech
+    town center
+        villager
+        female villager
+        wheelbarrow tech
+        feudal age tech
+        castle age tech

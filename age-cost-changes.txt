@@ -1,0 +1,69 @@
+stays the same:
+    Farm
+    Outpost
+    Siege Workshop (two costs: one for Cuman Feudal, one for all else)
+        (likewise for the Battering Ram)
+        (the tech tree lies in and out of game for both these units, unless you're cumans in feudal.)
+    all stone defense buildings (walls/towers/castles)
+    all unique buildings (besides folwark)
+
+changes every age:
+    all resource dropoff buildings
+    House (two additional costs for Mongols that have research Nomads in Castle or Imperial)
+        (tech tree lies in and out of game.)
+    Market
+    Blacksmith
+    Monastery
+    University
+    Barracks
+    Archery Range
+    Stable
+
+-----------------------------------------------------------
+
+old notes:
+// trade cart * 2!
+// - techtree: 128empty, not 204full
+// - ingame: 128empty, not 204full
+// - genie hiddenineditor: none hidden
+// - 204full appears irrelevant
+// trebuchet * 2!
+// - techtree: 331packed, not 42unpacked
+// - ingame(+tt): 331packed, not 42unpacked
+// - 42unpacked appears irrelevant
+// house * 6!
+// - ingame nonmongolnomads&mongolnomads dark: 70dark
+// - ingame nonmongolnomads&mongolnomads feudal: 463feudal
+// - ingame nonmongolnomads castle: 464castle
+// - ingame mongolnomads castle: 191HOUS3m
+// - ingame nonmongolnomads imp: 465imp
+// - ingame mongolnomads castle: 192HOUS4m
+// - techtree nonmongolnomads: 70dark
+// - ingame techtree nonmongolnomads&mongolnomads dark: 70dark [lie, food->wood&--stone?]
+// - ingame techtree nonmongolnomads&mongolnomads feudal: 60 wood 30 gold?!?! (lie, food->wood&--stone?)
+// - ingame techtree nonmongolnomads castle: 55 wood 85 gold?!?! (lie, food->wood&--stone?)
+// - ingame techtree mongolnomads castle: 1000 wood 1000 gold?!?! (lie, food->wood&--stone?)
+// - ingame techtree nonmongolnomads imp: 40 wood 25 gold?!?! (lie, food->wood&--stone?)
+// - ingame techtree mongolnomads imp: 60 wood 30 gold?!?! (lie, food->wood&--stone?)
+// - genie hiddenineditor: all but 70dark hidden
+// - takeaway: 191HOUS3m and 192HOUS4m are for when mongols research unique tech nomads.
+//   - tech tree lies in and out of game.
+// siege workshop * 2?!
+// - ingame noncumans&cumans @ castle&imp(!): 150 (!), not 49
+// - ingame(+tt) cumans @ feudal: 49, not 150
+// - techtree noncumans: 49, not 150 (lie)
+// - techtree cumans: 49, not 150
+// - ingame noncumans&cumans tech tree @ castle&imp: 200 food?!?! (lie)
+// - genie: 49 upgrades to 150 at dark for noncumans, castle for cumans. but no differences, and no enabling
+// - takeaway: cuman feudal sw is one unit, all others are another.
+//   - tech tree lies in and out of game, unless you're cumans in feudal.
+// battering ram * 2!
+// - ingame noncumans&cumans @ castle&imp: 35 (!), not 1258
+// - ingame(+tt) cumans @ feudal: 1258, not 35
+// - techtree noncumans: 1258, not 35 (lie)
+// - techtree cumans: 1258, not 35
+// - ingame noncumans&cumans tech tree @ castle&imp: 60 food?!?! (lie)
+// - genie hiddenineditor: 1258, not 35
+// - genie: 1258 upgrades to 35 at dark for noncumans, castle for cumans. but no differences, and no enabling
+// - takeaway: cuman feudal br is one unit, all others are another.
+//   - tech tree lies in and out of game, unless you're cumans in feudal.

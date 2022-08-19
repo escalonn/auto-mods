@@ -44,7 +44,7 @@ void applyModifications(genie::DatFile *df, const string &modIdentifier);
 
 int main(int argc, char **argv) {
 
-    if (argc < 3) {
+    if (argc < 3 || argc > 4) {
         cout << "Usage: " << argv[0] << " <mod-identifier> source.dat [target.dat]" << endl;
         cout << "Where <mod-identifier> is one of the following, or multiple of the following joined by a +:" << endl;
         cout << "    " << COMMUNITY_GAMES << endl;
@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
         applyModifications(df, modIdentifier);
     }
 
-    if (argc > 4) {
+    if (argc == 4) {
         cout << "Saving as " << argv[3] << "..." << endl;
         df->saveAs(argv[3]);
     }

@@ -421,6 +421,8 @@ static const int16_t HEAVY_CROSSBOWMAN = 493;
 
 static const int16_t SPY = 138;
 static const int16_t NORSE_WARRIOR = 361;
+static const int16_t HUSKARL_BARRACKS = 759;
+static const int16_t ELITE_HUSKARL_BARRACKS = 761;
 static const int16_t EASTERN_SWORDSMAN = 894;
 static const int16_t HENRY_II = 1040;
 static const int16_t NINJA = 1145;
@@ -430,6 +432,8 @@ static const int16_t JAYAVIRAVARMAN = 1164;
 static const int16_t IROQUOIS_WARRIOR = 1374;
 
 static const int16_t CENTURION = 275;
+static const int16_t TARKAN_STABLE = 886;
+static const int16_t ELITE_TARKAN_STABLE = 887;
 static const int16_t RADEN_WIJAYA = 1159;
 static const int16_t CRUSADER_KNIGHT = 1723;
 static const int16_t YOUNG_BABUR = 1768;
@@ -462,6 +466,9 @@ static const int16_t SHEEP = 594;
 static const int16_t TURKEY = 833;
 static const int16_t WATER_BUFFALO = 1142;
 
+static const int16_t SIEGE_WORKSHOP_CUMAN_FEUDAL = 49;
+static const int16_t HOUSE_NOMADS_CASTLE = 191;
+static const int16_t HOUSE_NOMADS_IMPERIAL = 192;
 static const int16_t INDESTRUCT = 308;
 static const int16_t PALACE = 1096;
 static const int16_t SANKORE_MADRASAH = 1367;
@@ -475,5 +482,7 @@ static const int16_t SEA_GATE = 1382;
 static const int16_t CITY_GATE = 1582;
 
 static const int16_t FIRE_TOWER = 190;
+
+static const int16_t TREBUCHET_UNPACKED = 42;
 
 #endif //CREATE_DATA_MOD_IDS_H
