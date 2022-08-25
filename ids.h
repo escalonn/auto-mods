@@ -436,6 +436,8 @@ static const int16_t TARKAN_STABLE = 886;
 static const int16_t ELITE_TARKAN_STABLE = 887;
 static const int16_t RADEN_WIJAYA = 1159;
 static const int16_t CRUSADER_KNIGHT = 1723;
+static const int16_t RATHA_MELEE = 1738;
+static const int16_t ELITE_RATHA_MELEE = 1740;
 static const int16_t YOUNG_BABUR = 1768;
 
 static const int16_t DONKEY = 846;
@@ -449,6 +451,8 @@ static const int16_t DAGNAJAN = 1106;
 static const int16_t TABINSHWEHTI = 1166;
 static const int16_t GIRGEN_KHAN = 1269;
 static const int16_t KHAN = 1275;
+static const int16_t RATHA_RANGED = 1759;
+static const int16_t ELITE_RATHA_RANGED = 1761;
 static const int16_t IBRAHIM_LODI = 1771;
 static const int16_t SHAYBANI_KHAN = 1772;
 
@@ -466,7 +470,9 @@ static const int16_t SHEEP = 594;
 static const int16_t TURKEY = 833;
 static const int16_t WATER_BUFFALO = 1142;
 
+static const int16_t MONASTERY_FEUDAL = 30;
 static const int16_t SIEGE_WORKSHOP_CUMAN_FEUDAL = 49;
+static const int16_t MONASTERY_DARK = 104;
 static const int16_t HOUSE_NOMADS_CASTLE = 191;
 static const int16_t HOUSE_NOMADS_IMPERIAL = 192;
 static const int16_t INDESTRUCT = 308;

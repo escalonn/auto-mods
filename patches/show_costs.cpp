@@ -1,6 +1,11 @@
 #include "show_costs.h"
 #include <algorithm>
+#include <cmath>
+#include <deque>
+#include <filesystem>
+#include <functional>
 #include <iomanip>
+#include <iterator>
 #include <list>
 #include <map>
 #include <string>
@@ -46,7 +51,8 @@ probably because of the tech tree.
 
 buildings required for age-up are defined as required techs for the age tech.
 
-but what defines the fact that building a mill presumably triggers the "shadow mill -- age one" tech?
+what defines the fact that building a mill triggers the "shadow mill -- age one" tech?
+the "initiates technology" attribute on the mill.
 
 it's possible that the upgrade effect will, at runtime,
 copy the trainable/researchable units/techs from the one to the other when they are buildings.
@@ -59,71 +65,32 @@ otherwise, unclear how feudal barracks is connected to any of its units/techs. t
 // todo: indicate for each building, the cheaper and more expensive ages to build it
 // todo: indicate for each age, the most cost effective way to gain pop space (+ considering slav,chinese,inca civ
 //  bonuses)
-// todo: detect and flag cheap units todo: for every cheap unit, indicate the age & cost of its production
+// todo: detect and flag cheap units
+// todo: for every cheap unit, indicate the age & cost of its production
 //  building at cheapest?
 // todo: given villager m+f cost, indicate resource gathering ratios for 1 tc booming
 
+// todo: rename age-varying buildings according to the age e.g. Blacksmith (Castle)
 // todo: consider making ranking system like [$], [$$], [$$$] to flag cheap things from expensive easier?
-// todo: figure out wtf is up with the "vat?" and any other non fwgs resources
+// todo: consider scoring wood as less valuable, and food's value dependent on the price of farms
+//   (or =gold to keep it simple... or maybe just wood < food=gold=stone since stone isnt needed for castles)
 
-// todo: check apparently duplicate units listed in comment at top of showCosts function
 // todo: check and document behavior of relevant civ bonuses
 
 // todo: consider civ bonuses (like cuman ranges -75 wood) that allow infinite resources (kinda hard)
 // todo: distinguish cheap units that are gated behind expensive techs from those that aren't (hard)
 
 
-char const *const LANGUAGE_FILE_PATH =
+const char *const LANGUAGE_FILE_PATH =
     "/mnt/c/Program Files "
     "(x86)/Steam/steamapps/common/AoE2DE/resources/en/strings/key-value/key-value-strings-utf8.txt";
-char const *const OUTPUT_PATH = "build/costs.txt";
+const std::filesystem::path OUTPUT_PATH = "build";
 
 
 namespace {
 
 typedef genie::ResourceUsage<int16_t, int16_t, int16_t> ResourceCost;
 typedef genie::ResourceUsage<int16_t, int16_t, uint8_t> ResearchResourceCost;
-
-
-bool isNaturalResourceCost(const ResourceCost &cost) {
-    return cost.Type != -1 && cost.Type < 4 && cost.Amount > 0 && cost.Flag == 1;
-}
-
-
-bool isNaturalResearchResourceCost(const ResearchResourceCost &cost) {
-    return cost.Type != -1 && cost.Type < 4 && cost.Amount > 0 && cost.Flag == 1;
-}
-
-
-bool hasNaturalResourceCost(const genie::Unit &unit) {
-    std::vector<ResourceCost> costs = unit.Creatable.ResourceCosts;
-    return std::any_of(costs.begin(), costs.end(), isNaturalResourceCost);
-}
-
-
-bool hasNaturalResearchResourceCost(std::vector<ResearchResourceCost> costs) {
-    return std::any_of(costs.begin(), costs.end(), isNaturalResearchResourceCost);
-}
-
-
-int getSumOfNaturalResourceCosts(const std::vector<ResourceCost> &resourceCosts) {
-    int16_t sum = 0;
-    for (const ResourceCost &cost : resourceCosts) {
-        if (cost.Type > -1 && cost.Type < 4) {
-            sum += cost.Amount;
-        }
-    }
-    return sum;
-}
-
-
-ResearchResourceCost toResearchResourceCost(const ResourceCost &resourceCost) {
-    ResearchResourceCost researchResourceCost;
-    researchResourceCost.Type = resourceCost.Type;
-    researchResourceCost.Amount = resourceCost.Amount;
-    researchResourceCost.Flag = (bool)resourceCost.Flag;
-    return researchResourceCost;
-}
 
 
 ResourceCost toResourceCost(const ResearchResourceCost &researchResourceCost) {
@@ -135,24 +102,6 @@ ResourceCost toResourceCost(const ResearchResourceCost &researchResourceCost) {
 }
 
 
-std::vector<ResearchResourceCost> toResearchResourceCosts(const std::vector<ResourceCost> &resourceCosts) {
-    std::vector<ResearchResourceCost> researchResourceCosts;
-    researchResourceCosts.reserve(resourceCosts.size());
-    for (const ResourceCost &resourceCost : resourceCosts) {
-        if (resourceCost.Type < TYPE_POPULATION_HEADROOM) {
-            researchResourceCosts.push_back(toResearchResourceCost(resourceCost));
-        } else {
-            ResearchResourceCost researchResourceCost;
-            researchResourceCost.Type = -1;
-            researchResourceCost.Amount = 0;
-            researchResourceCost.Flag = false;
-            researchResourceCosts.push_back(researchResourceCost);
-        }
-    }
-    return researchResourceCosts;
-}
-
-
 std::vector<ResourceCost> toResourceCosts(const std::vector<ResearchResourceCost> &researchResourceCosts) {
     std::vector<ResourceCost> resourceCosts;
     resourceCosts.reserve(researchResourceCosts.size());
@@ -160,6 +109,185 @@ std::vector<ResourceCost> toResourceCosts(const std::vector<ResearchResourceCost
         resourceCosts.push_back(toResourceCost(researchResourceCost));
     }
     return resourceCosts;
+}
+
+
+bool isNaturalResourceCost(const ResourceCost &cost) {
+    return cost.Type != -1 && cost.Type < 4 && cost.Amount > 0 && cost.Flag == 1;
+}
+
+
+bool isNaturalResearchResourceCost(const ResearchResourceCost &cost) {
+    return cost.Type != -1 && cost.Type < 4 && cost.Amount > 0 && cost.Flag == 1;
+}
+
+class Cost {
+  public:
+    Cost(const std::vector<ResourceCost> &data) {
+        for (const ResourceCost &cost : data) {
+            if (cost.Flag == 1) {
+                switch (cost.Type) {
+                case TYPE_FOOD:
+                    food = cost.Amount;
+                    break;
+                case TYPE_WOOD:
+                    wood = cost.Amount;
+                    break;
+                case TYPE_GOLD:
+                    gold = cost.Amount;
+                    break;
+                case TYPE_STONE:
+                    stone = cost.Amount;
+                    break;
+                default:
+                    break;
+                }
+            }
+        }
+    }
+
+    Cost(const std::vector<ResearchResourceCost> &data) : Cost(toResourceCosts(data)) {}
+
+    bool getCostSum() const { return food + wood + gold + stone; }
+
+    bool hasCost() const { return getCostSum() > 0; }
+
+    std::string toString() const {
+        std::vector<std::string> tokens;
+        if (food > 0) {
+            tokens.emplace_back(std::to_string(food));
+            tokens.emplace_back("food");
+        }
+        if (wood > 0) {
+            tokens.emplace_back(std::to_string(wood));
+            tokens.emplace_back("wood");
+        }
+        if (gold > 0) {
+            tokens.emplace_back(std::to_string(gold));
+            tokens.emplace_back("gold");
+        }
+        if (stone > 0) {
+            tokens.emplace_back(std::to_string(stone));
+            tokens.emplace_back("stone");
+        }
+        tokens.emplace_back('(' + std::to_string(getCostSum()) + ')');
+        std::ostringstream oss;
+        for (auto it = tokens.begin(); it != tokens.end(); ++it) {
+            if (it != tokens.begin()) {
+                oss << ' ';
+            }
+            oss << *it;
+        }
+        return oss.str();
+    }
+
+  private:
+    int food;
+    int wood;
+    int gold;
+    int stone;
+};
+
+
+class Game {
+
+};
+
+// things i want to be able to see on this class...
+// - what is its name (via language dll or internal name)?
+// - what is its resource cost?
+// - what building is it researched at, if any?
+// - is it an age tech? for what age?
+// - what required tech objects does it have?
+//   - whose job is it to decide to construct the required tech objects? i guess we need
+//     a global list of techs by ID to draw from? should the constructor register them in that list?
+// - what units does it upgrade, and to what?
+// - what units does it enable?
+// - [maybe] what are all the tech objects that require this tech?
+
+// object is not fully usable until all related objects are constructed
+// options:
+// 1) some methods just wont work until then; nothing is precomputed based on them
+//       i don't like this one
+// 2) same as (1) but with memoization into fields
+// 3) explicit 2nd-phase initialization method once all related objects have been constructed
+//    to precompute everything
+// 4) container class for all related objects
+//     (at extreme end, it would just contain all existing code, no abstraction/encapsulation benefit)
+//
+
+class Tech {
+  public:
+    struct Hash {
+        size_t operator()(const Tech &tech) const { return std::hash<int>()(tech.id); }
+    };
+
+    Tech(const genie::Tech &data, std::unordered_map<int, std::string> &nameMap)
+        : data(data), cost(data.ResourceCosts) {
+        // initialize id
+        id = techs.size();
+
+        // initialize name
+        name = nameMap[data.LanguageDLLName];
+        if (name.empty()) {
+            name = data.Name;
+        }
+
+        // initialize requiredTechs
+        // for (const int &i : data.RequiredTechs) {
+        //     if (i > -1) {
+        //         requiredTechs.emplace(techs[i]);
+        //     }
+        // }
+
+        techs.emplace_back(std::cref(*this));
+    }
+
+    Tech(const Tech &) = delete;
+
+    Tech &operator=(const Tech &) = delete;
+
+    // should i delete move as well?
+
+    // requires other techs to exist
+    void Initialize() {
+
+    }
+
+    std::string getName() const { return name; }
+
+    Cost getCost() const { return cost; }
+
+    // should either store this as a field, or, expose it as an iterator?
+    // maybe just expose methods like "hasRequiredTech"?
+    // std::unordered_set<std::reference_wrapper<const Tech>, Hash> getRequiredTechs() {
+    //     std::unordered_set<std::reference_wrapper<const Tech>, Hash> result;
+    //     for (const int &i : data.RequiredTechs) {
+    //         if (i > -1) {
+    //             result.emplace(techs[i]);
+    //         }
+    //     }
+    //     return result;
+    // }
+
+  private:
+    static std::vector<std::reference_wrapper<const Tech>> techs;
+    int id;
+    std::string name;
+    Cost cost;
+    // std::unordered_set<std::reference_wrapper<const Tech>, Hash> requiredTechs;
+    const genie::Tech &data;
+};
+
+
+bool hasNaturalResourceCost(const genie::Unit &unit) {
+    std::vector<ResourceCost> costs = unit.Creatable.ResourceCosts;
+    return std::any_of(costs.begin(), costs.end(), isNaturalResourceCost);
+}
+
+
+bool hasNaturalResearchResourceCost(std::vector<ResearchResourceCost> costs) {
+    return std::any_of(costs.begin(), costs.end(), isNaturalResearchResourceCost);
 }
 
 
@@ -226,22 +354,29 @@ std::string costToString(const std::vector<ResearchResourceCost> &costs) {
 
 }  // namespace
 
-void showCosts(genie::DatFile *df) {
-    std::unordered_set<int16_t> const unitsToInclude = {
+// general plan for this method
+// 1. input
+//    - read in language file (namemap), all techs and all units.
+// 2. processing
+//    - distinguish buildings and units
+//    - associate techs to research locations
+//    - associate units to training locations
+//    - find age techs and associate to ages.
+//    - find enabling techs and associate to units and ages
+//    - find upgrading techs and associate to units and ages
+//    - associate unit groups that are upgraded versions of each other as one thing
+// 3. output
+//    - write out units.txt
+//    - write out ages.txt
+//    - write out buildings.txt
+void showCosts(const genie::DatFile *const df) {
+    // possibly consider including dark age TC, because it can be built
+    // if you delete the first one or in nomad start? cumans can always build 2nd feudal TC.
+    const std::unordered_set<int16_t> unitsToInclude = {
         ID_VILLAGER_BASE_F,
     };
 
-    // monastery * 4!
-    // - ingame(+tt) castle: 31CRCH3
-    // - ingame imp: 32CRCH4
-    // - techtree: 104CRCH (lie)
-    // - ingame techtree imp: 110 food?!?! (lie)
-    // - genie hiddenineditor: all but 104CRCH hidden
-    // - 104CRCH and 30CRCH2 appear irrelevant
-    // ratha * 2!
-    // elite ratha * 2!
-
-    std::unordered_set<int16_t> const unitsToExclude = {
+    const std::unordered_set<int16_t> unitsToExclude = {
         HEAVY_CROSSBOWMAN,
         ID_VILLAGER_FISHER_M,
         ID_VILLAGER_BUILDER_M,
@@ -268,6 +403,8 @@ void showCosts(genie::DatFile *df) {
         ID_SURYAVARMAN_I,
         ID_BAYINNAUNG,
         CRUSADER_KNIGHT,
+        RATHA_MELEE,
+        ELITE_RATHA_MELEE,
         YOUNG_BABUR,
         ID_TRADE_CART_FULL,
         DONKEY,
@@ -293,6 +430,10 @@ void showCosts(genie::DatFile *df) {
         SHEEP,
         TURKEY,
         WATER_BUFFALO,
+        // todo: the monasteries might possibly not need to be explicitly excluded
+        //  if some of the age.txt logic is generalized correctly.
+        MONASTERY_DARK,
+        MONASTERY_FEUDAL,
         INDESTRUCT,
         PALACE,
         SANKORE_MADRASAH,
@@ -307,7 +448,7 @@ void showCosts(genie::DatFile *df) {
         TREBUCHET_UNPACKED,
     };
 
-    std::unordered_map<int16_t, std::string> const unitNameOverride = {
+    const std::unordered_map<int16_t, std::string> unitNameOverride = {
         {HUSKARL_BARRACKS, "Huskarl (Barracks)"},
         {ELITE_HUSKARL_BARRACKS, "Elite Huskarl (Barracks)"},
         {SERJEANT, "Serjeant (Castle)"},
@@ -320,85 +461,187 @@ void showCosts(genie::DatFile *df) {
         {ELITE_KONNIK, "Elite Konnik (Castle)"},
         {KONNIK_2, "Konnik (Krepost)"},
         {ELITE_KONNIK_2, "Elite Konnik (Krepost)"},
+        // todo: maybe need some special handling for buildings.txt
         {BATTERING_RAM, "Battering Ram (Cuman Feudal)"},
         {ID_TRADE_CART_EMPTY, "Trade Cart"},
+        {RATHA_RANGED, "Ratha"},
+        {ELITE_RATHA_RANGED, "Elite Ratha"},
+        {ID_TRADE_CART_EMPTY, "Trade Cart"},
+        // todo: probably these three will need some kind of special handling when appending age names for units.txt
         {SIEGE_WORKSHOP_CUMAN_FEUDAL, "Siege Workshop (Cuman Feudal)"},
         {HOUSE_NOMADS_CASTLE, "House (Nomads Castle)"},
         {HOUSE_NOMADS_IMPERIAL, "House (Nomads Imperial)"},
         {TREBUCHET, "Trebuchet"}};
 
+    enum UnitType { unit, building, tech };
+    const std::unordered_map<int16_t, UnitType> unitTypeOverride = {{TREBUCHET, UnitType::unit}};
 
-    int const UNIT = 0, BUILDING = 1, TECH = 2;
-    std::unordered_map<int16_t, int> const unitTypeOverride = {{TREBUCHET, UNIT}};
+    enum Age { dark = 0, feudal = 1, castle = 2, imperial = 3 };
+    const std::vector<Age> ages = {Age::dark, Age::feudal, Age::castle, Age::imperial};
 
-    std::unordered_map<int, std::string> nameMap;
+    const uint8_t RESOURCE_MODIFIER = 1, ENABLE_DISABLE_UNIT = 2, UPGRADE_UNIT = 3;
+    const int16_t CURRENT_AGE = 6;
+    const int16_t SET = 0;
+    const int16_t NONE = -1;
+    const int16_t ALL = -1;
+    const int16_t ENABLE = 1;
+
+    std::unordered_map<int16_t, std::string> nameMap;
     std::ifstream fin(LANGUAGE_FILE_PATH);
     std::string line;
-    while (getline(fin, line)) {
+    while (std::getline(fin, line)) {
         if (line.empty() || line.rfind("//", 0) == 0)
             continue;
         std::stringstream ss(line);
-        int id;
+        int16_t id;
         std::string name;
         ss >> id >> std::quoted(name);
         nameMap[id] = name;
     }
 
-    // std::multimap<int, std::string> output;
-    std::multimap<std::tuple<int, int>, std::string> output;
-    // std::multimap<std::tuple<uint8_t, int16_t, std::string>, std::string> output;
-    // std::multimap<std::tuple<int, uint8_t, int16_t, std::string>, std::string> output;
-
-    std::vector<genie::Unit> const units = df->Civs[0].Units;
-    for (auto const &unit : units) {
-        if (hasNaturalResourceCost(unit)) {
-            bool const hasTrainLocation = unit.Creatable.TrainLocationID != -1;
-            if (unitsToInclude.find(unit.ID) != unitsToInclude.end() ||
-                unitsToExclude.find(unit.ID) == unitsToExclude.end() && hasTrainLocation) {
-                std::string name;
-                if (auto itr = unitNameOverride.find(unit.ID); itr != unitNameOverride.end()) {
-                    name = itr->second;
-                } else {
-                    name = nameMap[unit.LanguageDLLName];
-                }
-                std::string const location =
-                    hasTrainLocation ? nameMap[units[unit.Creatable.TrainLocationID].LanguageDLLName] : "n/a";
-
-                auto totalCost = 0;
-                std::vector<ResourceCost> resourceCosts = unit.Creatable.ResourceCosts;
-                for (const auto &cost : resourceCosts) {
-                    if (cost.Type != -1 && cost.Type < 4) {
-                        totalCost += cost.Amount;
+    // todo: consider scrapping effect loop and just looping through all techs. why not? only one effect per tech.
+    std::unordered_set<Age> agesNotSeen(ages.begin(), ages.end());
+    std::unordered_map<int16_t, Age> ageEffects;
+    std::unordered_map<int16_t, std::unordered_set<int16_t>> enableEffects;
+    std::unordered_map<int16_t, std::unordered_map<int16_t, int16_t>> upgradeEffects;
+    std::unordered_map<Age, std::unordered_set<int16_t>> unitsByAge;
+    // consider looking for ALL upgrade effects & tracking those units
+    //  might be needed e.g. to see house -> nomads house. is needed for cuman feudal SW -> SW.
+    std::unordered_map<Age, std::unordered_map<int16_t, std::unordered_set<int16_t>>> ageUpgrades;
+    // does not include tech-upgraded units
+    std::unordered_map<int16_t, std::unordered_map<Age, std::unordered_set<int16_t>>> unitUpgradesByAge;
+    for (int16_t effectID = 0; effectID < df->Effects.size(); ++effectID) {
+        const std::vector<genie::EffectCommand> &commands = df->Effects[effectID].EffectCommands;
+        for (const auto &c : commands) {
+            if (!agesNotSeen.empty() && c.Type == RESOURCE_MODIFIER && c.A == CURRENT_AGE && c.B == SET &&
+                c.C == NONE && std::trunc(c.D) == c.D) {
+                const auto age = static_cast<Age>(c.D);
+                if (const auto it = agesNotSeen.find(age); it != agesNotSeen.end()) {
+                    agesNotSeen.erase(it);
+                    ageEffects[effectID] = age;
+                    // any upgrade effects side-by-side with the age-up effect
+                    for (const auto &c2 : commands) {
+                        if (c2.Type == UPGRADE_UNIT && c2.C == ALL) {  // todo: DRY
+                            // todo: should i really put this unit in unitsByAge here?
+                            // what if it's not enabled yet? e.g. monastery, town center
+                            // i might need to track "enabledness" of a sequence of units more robustly
+                            // through the ages.
+                            // for now, i'll just exclude monastery & town center
+                            // i'm tracking upgradeEffects distinctly now, so, this section should probably be
+                            // refactored
+                            unitsByAge[age].emplace(c2.B);
+                            ageUpgrades[age][c2.A].emplace(c2.B);
+                            unitUpgradesByAge[c2.A][age].emplace(c2.B);
+                        }
                     }
                 }
-
-                int type;
-                if (auto itr = unitTypeOverride.find(unit.ID); itr != unitTypeOverride.end()) {
-                    type = itr->second;
-                } else {
-                    type = unit.Type == 80 ? BUILDING : UNIT;
-                }
-
-                // auto const sortBy = std::make_tuple(unit.Type, unit.Class, name);
-                // auto const sortBy = unit.Class;
-                // auto const sortBy = totalCost;
-                // auto const sortBy = std::make_tuple(type, unit.Type, unit.Class, name);
-                auto const sortBy = std::make_tuple(type, totalCost);
-                std::string const type_str = type == BUILDING ? "building" : "unit";
-
-                std::string const info = std::to_string(unit.ID) + " " + unit.Name + " @ " + location;
-                // std::string const info = std::to_string(unit.Type) + " " + std::to_string(unit.Class) + " " +
-                //                          std::to_string(unit.ID) + " - " + unit.Name + " @ " + location;
-
-                std::string const cost = costToString(resourceCosts) + " (" + std::to_string(totalCost) + ")";
-
-                output.insert({sortBy, "Cost of " + type_str + " " + name + " [" + info + "] is " + cost});
+            } else if (c.Type == ENABLE_DISABLE_UNIT && c.B == ENABLE) {
+                enableEffects[effectID].emplace(c.A);  // the enabled unit's ID
+            } else if (c.Type == UPGRADE_UNIT && c.C == ALL) {
+                upgradeEffects[effectID].emplace(c.A, c.B);
             }
         }
     }
 
-    for (size_t techId = 0; techId < df->Techs.size(); ++techId) {
-        auto const tech = df->Techs[techId];
+    std::unordered_map<int16_t, std::unordered_set<int16_t>> techBuildingRequirements;
+
+    const std::vector<genie::Unit> &units = df->Civs[0].Units;
+
+    for (const auto &unit : units) {
+        const bool hasTrainLocation = unit.Creatable.TrainLocationID != -1;  // todo: DRY
+        if (unit.Building.TechID != -1) {
+            // do i want ALL the archery ranges, or just one archery range? for now, all
+            techBuildingRequirements[unit.Building.TechID].emplace(unit.ID);
+        }
+    }
+
+    // std::multimap<int, std::string> unitsOutput;
+    // std::multimap<std::tuple<int, int>, std::string> unitsOutput;
+    // std::multimap<std::tuple<uint8_t, int16_t, std::string>, std::string> unitsOutput;
+    std::multimap<std::tuple<int, uint8_t, int16_t, std::string>, std::string> unitsOutput;
+
+    std::unordered_map<Age, std::unordered_set<int16_t>> ageBuildingRequirements;
+    std::unordered_map<Age, int16_t> ageTech;
+
+    agesNotSeen.insert(ages.begin(), ages.end());
+    for (int16_t techID = 0; techID < df->Techs.size(); ++techID) {
+        const genie::Tech &tech = df->Techs[techID];
+        if (!agesNotSeen.empty()) {
+            if (const auto it = ageEffects.find(tech.EffectID); it != ageEffects.end()) {
+                const Age age = it->second;
+                ageTech[age] = techID;
+                agesNotSeen.erase(age);
+                std::deque<int16_t> stack(tech.RequiredTechs.begin(), tech.RequiredTechs.end());
+                while (!stack.empty()) {
+                    const int16_t requiredID = stack.front();
+                    stack.pop_front();
+                    if (requiredID == -1) {
+                        continue;
+                    }
+                    const genie::Tech &required = df->Techs[requiredID];
+                    if (const auto it = ageEffects.find(required.EffectID); it != ageEffects.end()) {
+                        continue;
+                    }
+                    const std::unordered_set<int16_t> &buildings = techBuildingRequirements[requiredID];
+                    ageBuildingRequirements[age].insert(buildings.begin(), buildings.end());
+
+                    stack.insert(stack.begin(), required.RequiredTechs.begin(), required.RequiredTechs.end());
+                }
+            }
+        }
+
+        // todo: now that we're tracking upgradeEffects,
+        //  use it to ensure that cuman feudal siege workshops become regular siege workshops.
+        //  i guess first i have to figure out what tech the upgrade effect is from, and then determine an age,
+        //  like i'm doing for enable effects. this implies looping through techs more than once.
+        //  might as well stop looping through effects separately at the same time, right?
+
+        // for any techs with unit-enable effects, determine what age the units should be categorized under.
+        if (const auto it = enableEffects.find(tech.EffectID); it != enableEffects.end()) {
+            // if tech has no obvious age prereq, assume it's dark age (like polish folwark)
+            // (this logic is not very robust)
+            Age enabledBy = Age::dark;
+            // if the tech is itself an age tech, then of course that's the right age.
+            if (const auto it2 = ageEffects.find(tech.EffectID); it2 != ageEffects.end()) {
+                enabledBy = it2->second;
+            } else {
+                // otherwise, breadth-first search the graph of required techs until you find an
+                // age tech. we can't use the ageTech map because we haven't finished iterating through
+                // all the techs yet, but we can use the ageEffects map.
+                std::deque<int16_t> queue(tech.RequiredTechs.begin(), tech.RequiredTechs.end());
+                while (!queue.empty()) {
+                    const int16_t requiredID = queue.front();
+                    queue.pop_front();
+                    if (requiredID == -1) {
+                        continue;
+                    }
+                    const genie::Tech &required = df->Techs[requiredID];
+                    // if the directly-or-indirectly required tech is an age tech, then, that's the age we'll choose.
+                    if (const auto it2 = ageEffects.find(required.EffectID); it2 != ageEffects.end()) {
+                        enabledBy = it2->second;
+                        break;
+                    }
+                    queue.insert(queue.end(), required.RequiredTechs.begin(), required.RequiredTechs.end());
+                }
+            }
+            // track the units enabled in an age. but if they are also upgraded to other units in or before that age,
+            // track the upgraded unit(s) instead (blacksmith, monastery)
+            if (const auto it2 = ageUpgrades.find(enabledBy); it2 != ageUpgrades.end()) {
+                // check each enabled unit
+                for (const int16_t unitID : it->second) {
+                    if (const auto it3 = it2->second.find(unitID); it3 != it2->second.end()) {
+                        // todo: this line is partially redundant with adding units directly enabled by age tech
+                        // in the earlier effect processing loop.
+                        unitsByAge[enabledBy].insert(it3->second.begin(), it3->second.end());
+                    } else {
+                        unitsByAge[enabledBy].emplace(unitID);
+                    }
+                }
+            } else {
+                unitsByAge[enabledBy].insert(it->second.begin(), it->second.end());
+            }
+        }
+
         std::vector<ResearchResourceCost> researchResourceCosts = tech.ResourceCosts;
         if (hasNaturalResearchResourceCost(researchResourceCosts)) {
             if (tech.ResearchLocation > 0) {
@@ -407,32 +650,129 @@ void showCosts(genie::DatFile *df) {
                     name = tech.Name;
                 }
 
-                auto totalCost = 0;
+                int totalCost = 0;
                 for (const ResearchResourceCost &cost : researchResourceCosts) {
                     if (cost.Type != -1 && cost.Type < 4) {
                         totalCost += cost.Amount;
                     }
                 }
 
-                // auto const sortBy = std::make_tuple(-1, -1, name);
-                // auto const sortBy = -1;
-                // auto const sortBy = totalCost;
-                // auto const sortBy = std::make_tuple(TECH, -1, -1, name);
-                auto const sortBy = std::make_tuple(TECH, totalCost);
+                // const auto sortBy = std::tuple(-1, -1, name);
+                // const auto sortBy = -1;
+                // const auto sortBy = totalCost;
+                const auto sortBy = std::tuple(UnitType::tech, -1, -1, name);
+                // const auto sortBy = std::tuple(UnitType::tech, totalCost);
 
-                std::string const type = "tech";
+                const std::string type = "tech";
 
-                std::string const info = std::to_string(techId);
+                const std::string info = std::to_string(techID);
 
-                std::string const cost = costToString(researchResourceCosts) + " (" + std::to_string(totalCost) + ")";
+                const std::string cost = costToString(researchResourceCosts) + " (" + std::to_string(totalCost) + ")";
 
-                output.insert({sortBy, "Cost of " + type + " " + name + " [" + info + "] is " + cost});
+                unitsOutput.emplace(sortBy, "Cost of " + type + " " + name + " [" + info + "] is " + cost);
             }
         }
     }
 
-    std::ofstream fout(OUTPUT_PATH);
-    for (auto itr = output.begin(); itr != output.end(); ++itr) {
-        fout << itr->second << std::endl;
+    for (const genie::Unit &unit : units) {
+        if (hasNaturalResourceCost(unit)) {
+            const bool hasTrainLocation = unit.Creatable.TrainLocationID != -1;
+            if (unitsToInclude.find(unit.ID) != unitsToInclude.end() ||
+                unitsToExclude.find(unit.ID) == unitsToExclude.end() && hasTrainLocation) {
+                // if unit "available"/"enabled" from start without tech: dark age.
+                if (unit.Enabled) {
+                    unitsByAge[Age::dark].emplace(unit.ID);
+                }
+
+                std::string name;
+                if (const auto it = unitNameOverride.find(unit.ID); it != unitNameOverride.end()) {
+                    name = it->second;
+                } else {
+                    name = nameMap[unit.LanguageDLLName];
+                }
+                const std::string location =
+                    hasTrainLocation ? nameMap[units[unit.Creatable.TrainLocationID].LanguageDLLName] : "n/a";
+
+                int totalCost = 0;
+                std::vector<ResourceCost> resourceCosts = unit.Creatable.ResourceCosts;
+                for (const auto &cost : resourceCosts) {
+                    if (cost.Type != -1 && cost.Type < 4) {
+                        totalCost += cost.Amount;
+                    }
+                }
+
+                int type;
+                if (const auto it = unitTypeOverride.find(unit.ID); it != unitTypeOverride.end()) {
+                    type = it->second;
+                } else {
+                    type = unit.Type == genie::UnitType::UT_Building ? UnitType::building : UnitType::unit;
+                }
+
+                // const auto sortBy = std::tuple(unit.Type, unit.Class, name);
+                // const auto sortBy = unit.Class;
+                // const auto sortBy = totalCost;
+                const auto sortBy = std::tuple(type, unit.Type, unit.Class, name);
+                // const auto sortBy = std::tuple(type, totalCost);
+                const std::string type_str = type == UnitType::building ? "building" : "unit";
+
+                // const std::string info = std::to_string(unit.ID) + " " + unit.Name + " @ " + location;
+                const std::string info = std::to_string(unit.Type) + " " + std::to_string(unit.Class) + " " +
+                                         std::to_string(unit.ID) + " - " + unit.Name + " @ " + location;
+
+                const std::string cost = costToString(resourceCosts) + " (" + std::to_string(totalCost) + ")";
+
+                // todo: DRY
+                unitsOutput.emplace(sortBy, "Cost of " + type_str + " " + name + " [" + info + "] is " + cost);
+            }
+        }
+    }
+
+    std::ofstream unitsFile(OUTPUT_PATH / "units.txt");
+    for (const auto &entry : unitsOutput) {
+        unitsFile << entry.second << std::endl;
+    }
+
+    std::map<Age, std::multimap<std::tuple<uint8_t, uint8_t>, std::string>> agesOutput;
+
+    // todo: handle units here, not just buildings
+    for (const auto &[age, ageUnits] : unitsByAge) {
+        std::unordered_set<int16_t> nextAgeRequirements;
+        if (const auto it = std::next(std::find(ages.begin(), ages.end(), static_cast<Age>(age))); it != ages.end()) {
+            // find the next age, if exists
+            const Age nextAge = *it;
+            nextAgeRequirements = ageBuildingRequirements[nextAge];
+        }
+        for (const int16_t &unitID : ageUnits) {
+            const genie::Unit &unit = units[unitID];
+            if (unit.Type == genie::UnitType::UT_Building && (unitsToInclude.find(unit.ID) != unitsToInclude.end() ||
+                                                              unitsToExclude.find(unit.ID) == unitsToExclude.end() &&
+                                                                  unit.Creatable.TrainLocationID != -1)) {  // todo: DRY
+                std::string name;                                                                           // todo: DRY
+                if (const auto it = unitNameOverride.find(unitID); it != unitNameOverride.end()) {
+                    name = it->second;
+                } else {
+                    name = nameMap[unit.LanguageDLLName];
+                }
+                std::string output;
+                if (const auto it = std::find(nextAgeRequirements.begin(), nextAgeRequirements.end(), unitID);
+                    it != nextAgeRequirements.end()) {
+                    // mark buildings involved in age-up requirements
+                    output += "(*) ";
+                }
+                output += name + " [" + std::to_string(unitID) + "]";
+                // todo: add resource costs
+                // sort by position of the build button (e.g. house, mill, mining camp, etc.)
+                agesOutput[age].emplace(std::tuple(unit.InterfaceKind, unit.Creatable.ButtonID), output);
+            }
+        }
+    }
+
+    std::ofstream agesFile(OUTPUT_PATH / "ages.txt");
+    for (const auto &[age, entries] : agesOutput) {
+        // todo: probably add resource costs for age techs
+        agesFile << nameMap[df->Techs[ageTech[age]].LanguageDLLName] << std::endl;
+        for (const auto &entry : entries) {
+            agesFile << '\t' << entry.second << std::endl;
+        }
     }
 }

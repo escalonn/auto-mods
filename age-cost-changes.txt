@@ -14,6 +14,7 @@ changes every age:
     Market
     Blacksmith
     Monastery
+        (tech tree lies out of game and in game, unless you're in Castle.)
     University
     Barracks
     Archery Range
@@ -67,3 +68,39 @@ old notes:
 // - genie: 1258 upgrades to 35 at dark for noncumans, castle for cumans. but no differences, and no enabling
 // - takeaway: cuman feudal br is one unit, all others are another.
 //   - tech tree lies in and out of game, unless you're cumans in feudal.
+// monastery * 4!
+// - ingame(+tt) castle: 31CRCH3
+// - ingame imp: 32CRCH4
+// - techtree: 104CRCH (lie)
+// - ingame techtree imp: 110 food?!?! (lie)
+// - genie hiddenineditor: all but 104CRCH hidden
+// - genie: feudal upgrades 104CRCH to 30CRCH2
+//   - castle upgrades 104CRCH to 31CRCH3
+// - 104CRCH and 30CRCH2 appear irrelevant
+// ratha * 2!
+// elite ratha * 2!
+//   pretty sure they are built as ranged, not melee.
+town centers (probably the attached segments..?)
+484 RTWC3X @ Builder
+597 RTWC4X @ Builder
+617 RTWC2X @ Builder
+621 RTWC1X @ Builder
+109 RTWC only one that's not Hidden
+feudal
+    109 RTWC -> 71 RTWC2
+    618 RTWC1A -> 614 RTWC2A
+    619 RTWC1B -> 615 RTWC2B
+    620 RTWC1C -> 616 RTWC2C
+    621 RTWC1X -> 617 RTWC2X
+castle
+    109 RTWC -> 141 RTWC3
+    618 RTWC1A -> 481 RTWC3A
+    619 RTWC1B -> 482 RTWC3B
+    620 RTWC1C -> 483 RTWC3C
+    621 RTWC1X -> 484 RTWC3X
+imperial
+    109 RTWC -> 142 RTWC4
+    618 RTWC1A -> 611 RTWC4A
+    619 RTWC1B -> 612 RTWC4B
+    620 RTWC1C -> 613 RTWC4C
+    621 RTWC1X -> 597 RTWC4X

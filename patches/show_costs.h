@@ -4,6 +4,6 @@
 #include "genie/dat/DatFile.h"
 
 
-void showCosts(genie::DatFile *df);
+void showCosts(const genie::DatFile *const df);
 
 #endif  // SHOW_COSTS_H
