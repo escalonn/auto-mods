@@ -31,4 +31,5 @@ add_executable(
     ids.h
 )
 set_property(TARGET create-data-mod PROPERTY CXX_STANDARD 17)
+set_source_files_properties(patches/show_costs.cpp PROPERTIES COMPILE_OPTIONS "-Wpedantic;-Wall;-Wextra")
 target_link_libraries(create-data-mod genieutils)

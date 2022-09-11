@@ -1,5 +1,6 @@
 #include "show_costs.h"
 #include <algorithm>
+#include <assert.h>
 #include <cmath>
 #include <deque>
 #include <filesystem>
@@ -8,6 +9,7 @@
 #include <iterator>
 #include <list>
 #include <map>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -15,6 +17,8 @@
 #include <vector>
 #include "genie/dat/DatFile.h"
 #include "ids.h"
+
+using namespace std::literals;
 
 /*
 ln -s "/mnt/c/Program Files (x86)/Steam/steamapps/common/AoE2DE/resources/_common/dat/empires2_x2_p1.dat" de.dat
@@ -80,117 +84,305 @@ otherwise, unclear how feudal barracks is connected to any of its units/techs. t
 // todo: consider civ bonuses (like cuman ranges -75 wood) that allow infinite resources (kinda hard)
 // todo: distinguish cheap units that are gated behind expensive techs from those that aren't (hard)
 
+class BaseTest {
+  public:
+    BaseTest(int id) : id{id} {}
+    BaseTest(const BaseTest &) = delete;
+    BaseTest &operator=(const BaseTest &) = delete;
+    BaseTest(BaseTest &&) = delete;
+    BaseTest &operator=(BaseTest &&) = delete;
+    virtual ~BaseTest() = default;
 
-const char *const LANGUAGE_FILE_PATH =
-    "/mnt/c/Program Files "
-    "(x86)/Steam/steamapps/common/AoE2DE/resources/en/strings/key-value/key-value-strings-utf8.txt";
-const std::filesystem::path OUTPUT_PATH = "build";
+    // bool operator==(const BaseTest &other) const noexcept { return id == other.id; }
 
+    int getId() const noexcept { return id; }
+
+  private:
+    const int id;
+};
+
+namespace std {
+template <> struct hash<std::reference_wrapper<const BaseTest>> {
+    size_t operator()(const BaseTest &item) const noexcept { return hash<int>{}(item.getId()); }
+};
+
+// template <> struct hash<BaseTest> {
+//     size_t operator()(std::reference_wrapper<BaseTest> item) noexcept {
+//         return hash<int>{}(item.get().getId());
+//     }
+// };
+
+// template <> struct hash<BaseTest> { // must be ref to const
+//     size_t operator()(std::reference_wrapper<BaseTest> item) noexcept {
+//         return hash<int>{}(item.get().getId());
+//     }
+// };
+
+// template <class T> struct equal_to<BaseTest> {
+//     size_t operator()(const BaseTest &lhs, const BaseTest &rhs) const noexcept {
+//         return equal_to<int>{}(lhs.getId(), rhs.getId());
+//     }
+// };
+}  // namespace std
+
+// void collect() { std::unordered_set<std::reference_wrapper<const BaseTest>> set; }
 
 namespace {
 
-typedef genie::ResourceUsage<int16_t, int16_t, int16_t> ResourceCost;
-typedef genie::ResourceUsage<int16_t, int16_t, uint8_t> ResearchResourceCost;
+constexpr const char *const languageFilePath{
+    "/mnt/c/Program Files "
+    "(x86)/Steam/steamapps/common/AoE2DE/resources/en/strings/key-value/key-value-strings-utf8.txt"};
+constexpr const char *const outputPath{"build"};
 
+enum class ItemType { unit, building, tech };
 
-ResourceCost toResourceCost(const ResearchResourceCost &researchResourceCost) {
-    ResourceCost resourceCost;
-    resourceCost.Type = researchResourceCost.Type;
-    resourceCost.Amount = researchResourceCost.Amount;
-    resourceCost.Flag = (bool)researchResourceCost.Flag;
-    return resourceCost;
-}
-
-
-std::vector<ResourceCost> toResourceCosts(const std::vector<ResearchResourceCost> &researchResourceCosts) {
-    std::vector<ResourceCost> resourceCosts;
-    resourceCosts.reserve(researchResourceCosts.size());
-    for (const ResearchResourceCost &researchResourceCost : researchResourceCosts) {
-        resourceCosts.push_back(toResourceCost(researchResourceCost));
+struct CreatableContext {
+    CreatableContext(std::reference_wrapper<const std::unordered_map<int, std::string>> nameMap,
+                     std::reference_wrapper<const std::unordered_set<int>> include,
+                     std::reference_wrapper<const std::unordered_set<int>> exclude,
+                     std::reference_wrapper<const std::unordered_map<int, std::string>> nameOverride,
+                     std::reference_wrapper<const std::unordered_map<int, ItemType>> typeOverride)
+        : nameMap{nameMap}, include{include}, exclude{exclude}, nameOverride{nameOverride}, typeOverride{typeOverride} {
     }
-    return resourceCosts;
-}
 
+    std::reference_wrapper<const std::unordered_map<int, std::string>> nameMap;
+    std::reference_wrapper<const std::unordered_set<int>> include;
+    std::reference_wrapper<const std::unordered_set<int>> exclude;
+    std::reference_wrapper<const std::unordered_map<int, std::string>> nameOverride;
+    std::reference_wrapper<const std::unordered_map<int, ItemType>> typeOverride;
+};
 
-bool isNaturalResourceCost(const ResourceCost &cost) {
-    return cost.Type != -1 && cost.Type < 4 && cost.Amount > 0 && cost.Flag == 1;
-}
+class Unit;
 
+class Tech;
 
-bool isNaturalResearchResourceCost(const ResearchResourceCost &cost) {
-    return cost.Type != -1 && cost.Type < 4 && cost.Amount > 0 && cost.Flag == 1;
-}
+class Building;
+
+// class Game {};
+
+class AgeC {
+  public:
+    AgeC(float value) : value{value} {}
+    float getValue() { return value; }
+
+  private:
+    float value;
+};
 
 class Cost {
   public:
-    Cost(const std::vector<ResourceCost> &data) {
-        for (const ResourceCost &cost : data) {
-            if (cost.Flag == 1) {
-                switch (cost.Type) {
-                case TYPE_FOOD:
-                    food = cost.Amount;
-                    break;
-                case TYPE_WOOD:
-                    wood = cost.Amount;
-                    break;
-                case TYPE_GOLD:
-                    gold = cost.Amount;
-                    break;
-                case TYPE_STONE:
-                    stone = cost.Amount;
-                    break;
-                default:
-                    break;
-                }
+    template <class T, class A, class E>
+    explicit Cost(const std::vector<genie::ResourceUsage<T, A, E>> &data) noexcept
+        : food{readResource(data, TYPE_FOOD)}, wood{readResource(data, TYPE_WOOD)}, gold{readResource(data, TYPE_GOLD)},
+          stone{readResource(data, TYPE_STONE)} {}
+
+    int sum() const noexcept { return food + wood + gold + stone; }
+
+    bool empty() const noexcept { return sum() == 0; }
+
+    std::string toString() const noexcept {
+        const auto tokens{[this] {
+            std::vector<std::string> val;
+            if (food > 0) {
+                static const auto foodName{"Food"s};
+                val.emplace_back(std::to_string(food));
+                val.emplace_back(foodName);
             }
-        }
-    }
-
-    Cost(const std::vector<ResearchResourceCost> &data) : Cost(toResourceCosts(data)) {}
-
-    bool getCostSum() const { return food + wood + gold + stone; }
-
-    bool hasCost() const { return getCostSum() > 0; }
-
-    std::string toString() const {
-        std::vector<std::string> tokens;
-        if (food > 0) {
-            tokens.emplace_back(std::to_string(food));
-            tokens.emplace_back("food");
-        }
-        if (wood > 0) {
-            tokens.emplace_back(std::to_string(wood));
-            tokens.emplace_back("wood");
-        }
-        if (gold > 0) {
-            tokens.emplace_back(std::to_string(gold));
-            tokens.emplace_back("gold");
-        }
-        if (stone > 0) {
-            tokens.emplace_back(std::to_string(stone));
-            tokens.emplace_back("stone");
-        }
-        tokens.emplace_back('(' + std::to_string(getCostSum()) + ')');
-        std::ostringstream oss;
-        for (auto it = tokens.begin(); it != tokens.end(); ++it) {
-            if (it != tokens.begin()) {
-                oss << ' ';
+            if (wood > 0) {
+                static const auto woodName{"Wood"s};
+                val.emplace_back(std::to_string(wood));
+                val.emplace_back(woodName);
             }
-            oss << *it;
-        }
+            if (gold > 0) {
+                static const auto goldName{"Gold"s};
+                val.emplace_back(std::to_string(gold));
+                val.emplace_back(goldName);
+            }
+            if (stone > 0) {
+                static const auto stoneName{"Stone"s};
+                val.emplace_back(std::to_string(stone));
+                val.emplace_back(stoneName);
+            }
+            val.emplace_back('(' + std::to_string(sum()) + ')');
+            return val;
+        }()};
+        const auto oss{[&] {
+            std::ostringstream val;
+            for (auto it{tokens.begin()}; it != tokens.end(); ++it) {
+                if (it != tokens.begin())
+                    val << ' ';
+                val << *it;
+            }
+            return val;
+        }()};
         return oss.str();
     }
 
   private:
+    template <class T, class A, class E>
+    static int readResource(const std::vector<genie::ResourceUsage<T, A, E>> &data, int type) noexcept {
+        auto result{0};
+        static constexpr E flagPaid{1};
+        for (const auto &cost : data)
+            if (cost.Flag == flagPaid && cost.Type == type)
+                result += cost.Amount;
+        return result;
+    }
+
     int food;
     int wood;
     int gold;
     int stone;
 };
 
+template <class TGenie> class GenieItem {
+  public:
+    // todo: isn't there some way to implement these better?
+    // template <class Key> struct Hash {
+    //     // also, why can i access id directly when Key is Tech but not when Key is Unit...
+    //     // size_t operator()(const Key &key) const noexcept { return std::hash<int>{}(key.id); }
+    //     size_t operator()(const Key &key) const noexcept { return std::hash<int>{}(key.getID()); }
+    // };
 
-class Game {
+    template <class Key> struct Hash {
+        // also, why can i access id directly when Key is Tech but not when Key is Unit...
+        // size_t operator()(const Key &key) const noexcept { return std::hash<int>{}(key.id); }
+        size_t operator()(const Key &key) const noexcept { return std::hash<int>{}(key.getID()); } // TODO segfaults for Tech ?? so... test calling it directly
+    };
 
+    template <class T> struct Equal {
+        size_t operator()(const T &lhs, const T &rhs) const noexcept {
+            return std::equal_to<int>{}(lhs.getID(), rhs.getID());
+        }
+    };
+
+    GenieItem(const GenieItem &) = delete;
+    GenieItem &operator=(const GenieItem &) = delete;
+    GenieItem(GenieItem &&) = delete;
+    GenieItem &operator=(GenieItem &&) = delete;
+    virtual ~GenieItem() = default;
+
+    // bool operator==(const GenieItem &lhs, const GenieItem &rhs) const noexcept {
+    //     return lhs.id == rhs.id;
+    // }
+
+    // bool operator==(const GenieItem &rhs) const noexcept {
+    //     return this == &rhs;
+    // }
+
+    int getID() const noexcept { return id; }
+
+    const std::string &getName() const noexcept { return name; }
+
+    const Cost &getCost() const noexcept { return cost; }
+
+  protected:
+    GenieItem(int id, std::string name, const Cost &cost, const TGenie &data)
+        : id{id}, name{name}, cost{cost}, data{data} {}
+
+    const TGenie &getData() const noexcept { return data; }
+
+  private:
+    const int id;
+    const std::string name;
+    const Cost cost;
+    const std::reference_wrapper<const TGenie> data;
+};
+
+// todo: one creatable instance should hold a whole set of units that upgrade into each other?
+// should hold a primary ID and then a collection of secondary IDs?
+// should be pointed to by multiple entries in the units & buildings maps?
+// no, that won't work, duh, i want to see 6 different houses etc...
+class Creatable : public GenieItem<genie::Unit> {
+  public:
+    Creatable(const genie::Unit &data, const CreatableContext &context)
+        : GenieItem{data.ID,
+                    [&data, &context, this] {
+                        if (const auto it{context.nameOverride.get().find(getID())};
+                            it != context.nameOverride.get().end())
+                            return it->second;
+                        if (const auto it{context.nameMap.get().find(data.LanguageDLLName)};
+                            it != context.nameMap.get().end())
+                            return it->second;
+                        return data.Name;
+                    }(),
+                    Cost{data.Creatable.ResourceCosts},
+                    data},
+          relevant{[&data, &context, this] {
+              if (context.include.get().find(getID()) != context.include.get().end())
+                  return true;
+              if (context.exclude.get().find(getID()) != context.exclude.get().end())
+                  return false;
+              // this logic is bad for some "base units" that upgrade into others; town center 109 or monastery 104,
+              // possibly others for techs
+              const auto hasTrainLocation{data.Creatable.TrainLocationID != -1};
+              if (!hasTrainLocation)  // && getID() != 109)
+                  return false;
+              if (getCost().empty())
+                  return false;
+              return true;
+          }()} {}
+
+    Creatable(const Creatable &) = delete;
+    Creatable &operator=(const Creatable &) = delete;
+    Creatable(Creatable &&) = delete;
+    Creatable &operator=(Creatable &&) = delete;
+    ~Creatable() override = default;
+
+    static bool isBuilding(const genie::Unit &data, const CreatableContext &context) {
+        if (const auto it{context.typeOverride.get().find(data.ID)}; it != context.typeOverride.get().end())
+            return it->second == ItemType::building;
+        return data.Type == genie::UnitType::UT_Building;
+    }
+
+    bool isRelevant() const noexcept { return relevant; }
+
+    void init(const std::unordered_map<int, std::reference_wrapper<const Unit>> &units,
+              const std::unordered_map<int, std::reference_wrapper<const Building>> &buildings,
+              const std::vector<std::reference_wrapper<const Tech>> &techs) {
+        postInit(units, buildings, techs);
+    }
+
+  protected:
+    virtual void
+    postInit([[maybe_unused]] const std::unordered_map<int, std::reference_wrapper<const Unit>> &units,
+             [[maybe_unused]] const std::unordered_map<int, std::reference_wrapper<const Building>> &buildings,
+             [[maybe_unused]] const std::vector<std::reference_wrapper<const Tech>> &techs) {}
+
+  private:
+    const bool relevant;
+};
+
+// todo: consistency between Id and ID
+
+class Unit : public Creatable {
+  public:
+    Unit(const genie::Unit &data, const CreatableContext &creatableContext) : Creatable{data, creatableContext} {}
+
+  protected:
+    void postInit(const std::unordered_map<int, std::reference_wrapper<const Unit>> &units,
+                  const std::unordered_map<int, std::reference_wrapper<const Building>> &buildings,
+                  const std::vector<std::reference_wrapper<const Tech>> &techs) override {
+        // todo
+        // Flemish Militia (1699): 109
+        // Villager (Male) (83): 109
+        // Missionary (775): 104
+        // Monk (125): 104
+        if (auto locationId{getData().Creatable.TrainLocationID}; locationId != -1)
+            try {
+                trainLocation = &buildings.at(locationId).get();
+            } catch (const std::out_of_range &) {
+                std::cout << getName() << " ("s << getID() << "): "s << locationId << '\n';
+            }
+    }
+
+  private:
+    Building const *trainLocation{};
+};
+
+class Building : public Creatable {
+  public:
+    Building(const genie::Unit &data, const CreatableContext &creatableContext) : Creatable{data, creatableContext} {}
 };
 
 // things i want to be able to see on this class...
@@ -216,143 +408,127 @@ class Game {
 //     (at extreme end, it would just contain all existing code, no abstraction/encapsulation benefit)
 //
 
-class Tech {
+// todo: consider adding more runtime assertions about assumptions like only one tech per age
+
+class Tech : public GenieItem<genie::Tech> {
   public:
-    struct Hash {
-        size_t operator()(const Tech &tech) const { return std::hash<int>()(tech.id); }
-    };
-
-    Tech(const genie::Tech &data, std::unordered_map<int, std::string> &nameMap)
-        : data(data), cost(data.ResourceCosts) {
-        // initialize id
-        id = techs.size();
-
-        // initialize name
-        name = nameMap[data.LanguageDLLName];
-        if (name.empty()) {
-            name = data.Name;
-        }
-
-        // initialize requiredTechs
-        // for (const int &i : data.RequiredTechs) {
-        //     if (i > -1) {
-        //         requiredTechs.emplace(techs[i]);
-        //     }
-        // }
-
-        techs.emplace_back(std::cref(*this));
-    }
+    Tech(int id, const genie::Tech &data, const genie::Effect *const effectDataPtr,
+         const std::unordered_map<int, std::string> &nameMap)
+        : Tech{id, data, nameMap, [&] {
+                   Tech::EffectInfo val{};
+                   if (!effectDataPtr)
+                       return val;
+                   for (const auto &command : effectDataPtr->EffectCommands) {
+                       static constexpr uint8_t typeResourceModifier{1};
+                       static constexpr auto resourceCurrentAge{6};
+                       static constexpr auto modeSet{0};
+                       static constexpr auto resourceMultiplyNone{-1};
+                       static constexpr uint8_t typeEnableDisableUnit{2};
+                       static constexpr auto modeEnable{1};
+                       static constexpr uint8_t typeUpgradeUnit{3};
+                       static constexpr auto modeAll{-1};
+                       if (command.Type == typeResourceModifier && command.A == resourceCurrentAge) {
+                           assert(command.B == modeSet && command.C == resourceMultiplyNone);
+                           val.ageSet.emplace(command.D);
+                       } else if (command.Type == typeEnableDisableUnit && command.B == modeEnable) {
+                           val.unitIdsEnabled.emplace(command.A);  // the enabled unit's ID
+                       } else if (command.Type == typeUpgradeUnit && command.C == modeAll) {
+                           val.unitIdsUpgraded.try_emplace(command.A, command.B);
+                       }
+                   }
+                   return val;
+               }()} {}
 
     Tech(const Tech &) = delete;
-
     Tech &operator=(const Tech &) = delete;
+    Tech(Tech &&) = delete;
+    Tech &operator=(Tech &&) = delete;
+    ~Tech() override = default;
 
-    // should i delete move as well?
+    void init(const std::unordered_map<int, std::reference_wrapper<const Unit>> &units,
+              const std::unordered_map<int, std::reference_wrapper<const Building>> &buildings,
+              const std::vector<std::reference_wrapper<const Tech>> &techs) {
+        // todo: wrongly discarding 109 town center for example
+        if (auto it{buildings.find(getData().ResearchLocation)}; it != buildings.end())
+            researchLocation = &it->second.get();
 
-    // requires other techs to exist
-    void Initialize() {
+        for (const auto &id : getData().RequiredTechs)
+            if (id != -1)
+                requiredTechs.emplace(techs[id]);
 
+        for (const auto &id : unitIdsEnabled)
+            unitsEnabled.emplace(units.at(id));
+
+        for (const auto &[id1, id2] : unitIdsUpgraded)
+            unitsUpgraded.try_emplace(units.at(id1), units.at(id1));
     }
-
-    std::string getName() const { return name; }
-
-    Cost getCost() const { return cost; }
 
     // should either store this as a field, or, expose it as an iterator?
     // maybe just expose methods like "hasRequiredTech"?
-    // std::unordered_set<std::reference_wrapper<const Tech>, Hash> getRequiredTechs() {
-    //     std::unordered_set<std::reference_wrapper<const Tech>, Hash> result;
-    //     for (const int &i : data.RequiredTechs) {
-    //         if (i > -1) {
-    //             result.emplace(techs[i]);
-    //         }
-    //     }
-    //     return result;
-    // }
+    const std::unordered_set<std::reference_wrapper<const Tech>, Hash<Tech>, Equal<Tech>> &
+    getRequiredTechs() const noexcept {
+        return requiredTechs;
+    }
+
+    const std::unordered_set<std::reference_wrapper<const Unit>, Hash<Unit>, Equal<Unit>> &
+    getUnitsEnabled() const noexcept {
+        return unitsEnabled;
+    }
+
+    const std::unordered_map<std::reference_wrapper<const Unit>, std::reference_wrapper<const Unit>, Hash<Unit>,
+                             Equal<Unit>> &
+    getUnitsUpgraded() const noexcept {
+        return unitsUpgraded;
+    }
+
+    const std::optional<AgeC> ageSet;
 
   private:
-    static std::vector<std::reference_wrapper<const Tech>> techs;
-    int id;
-    std::string name;
-    Cost cost;
-    // std::unordered_set<std::reference_wrapper<const Tech>, Hash> requiredTechs;
-    const genie::Tech &data;
+    struct EffectInfo {
+        std::optional<AgeC> ageSet{};
+        std::unordered_set<int> unitIdsEnabled;
+        std::unordered_map<int, int> unitIdsUpgraded;
+    };
+
+    Tech(int id, const genie::Tech &data, const std::unordered_map<int, std::string> &nameMap,
+         const EffectInfo &effectInfo)
+        : GenieItem{id,
+                    [&] {
+                        if (const auto it{nameMap.find(data.LanguageDLLName)}; it != nameMap.end())
+                            return it->second;
+                        return data.Name;
+                    }(),
+                    Cost{data.ResourceCosts},
+                    data},
+          ageSet{effectInfo.ageSet}, unitIdsEnabled{effectInfo.unitIdsEnabled}, unitIdsUpgraded{
+                                                                                    effectInfo.unitIdsUpgraded} {}
+
+    const std::unordered_set<int> unitIdsEnabled;
+    const std::unordered_map<int, int> unitIdsUpgraded;
+    const Building *researchLocation{};
+    std::unordered_set<std::reference_wrapper<const Tech>, Hash<Tech>, Equal<Tech>> requiredTechs;
+    std::unordered_set<std::reference_wrapper<const Unit>, Hash<Unit>, Equal<Unit>> unitsEnabled;
+    std::unordered_map<std::reference_wrapper<const Unit>, std::reference_wrapper<const Unit>, Hash<Unit>, Equal<Unit>>
+        unitsUpgraded;
 };
 
-
-bool hasNaturalResourceCost(const genie::Unit &unit) {
-    std::vector<ResourceCost> costs = unit.Creatable.ResourceCosts;
-    return std::any_of(costs.begin(), costs.end(), isNaturalResourceCost);
-}
-
-
-bool hasNaturalResearchResourceCost(std::vector<ResearchResourceCost> costs) {
-    return std::any_of(costs.begin(), costs.end(), isNaturalResearchResourceCost);
-}
-
-
-std::string costToString(const std::vector<ResourceCost> &costs) {
-    std::string s;
-    for (const ResourceCost &cost : costs) {
-        if (cost.Flag == 1 && cost.Type != -1) {
-            s += std::to_string(cost.Amount);
-            s += " ";
-            switch (cost.Type) {
-            case TYPE_FOOD:
-                s += "Food ";
-                break;
-            case TYPE_WOOD:
-                s += "Wood ";
-                break;
-            case TYPE_GOLD:
-                s += "Gold ";
-                break;
-            case TYPE_STONE:
-                s += "Stone ";
-                break;
-            case TYPE_POPULATION_HEADROOM:
-                s += "Pop ";
-                break;
-            default:
-                s += "vat? ";
-            }
-        }
-    }
-    return s.substr(0, s.length() - 1);
-}
-
-
-std::string costToString(const std::vector<ResearchResourceCost> &costs) {
-    std::string s;
-    for (const ResearchResourceCost &cost : costs) {
-        if (cost.Flag == 1 && cost.Type != -1) {
-            s += std::to_string(cost.Amount);
-            s += " ";
-            switch (cost.Type) {
-            case TYPE_FOOD:
-                s += "Food ";
-                break;
-            case TYPE_WOOD:
-                s += "Wood ";
-                break;
-            case TYPE_GOLD:
-                s += "Gold ";
-                break;
-            case TYPE_STONE:
-                s += "Stone ";
-                break;
-            case TYPE_POPULATION_HEADROOM:
-                s += "Pop ";
-                break;
-            default:
-                s += "vat? ";
-            }
-        }
-    }
-    return s.substr(0, s.length() - 1);
-}
-
+// todo maybe we can build this list dynamically and have no need to hardcode?
+// given the four age techs, either assume they're in numerical order, or put them in reverse order of requirements
+// assert that there aren't duplicates or disconnected ages or whatever
+enum class Age { dark = 0, feudal = 1, castle = 2, imperial = 3 };
 }  // namespace
+
+namespace std {
+template <class T> struct hash<std::reference_wrapper<const GenieItem<T>>> {
+    size_t operator()(const GenieItem<T> &item) const noexcept { return hash<int>{}(item.getID()); }
+};
+
+// template <class T> struct equal_to<GenieItem<T>> {
+//     size_t operator()(const GenieItem<T> &lhs, const GenieItem<T> &rhs) const noexcept {
+//         return equal_to<int>{}(lhs.id, rhs.id);
+//     }
+// };
+}  // namespace std
 
 // general plan for this method
 // 1. input
@@ -372,11 +548,11 @@ std::string costToString(const std::vector<ResearchResourceCost> &costs) {
 void showCosts(const genie::DatFile *const df) {
     // possibly consider including dark age TC, because it can be built
     // if you delete the first one or in nomad start? cumans can always build 2nd feudal TC.
-    const std::unordered_set<int16_t> unitsToInclude = {
+    const std::unordered_set<int> creatablesToInclude{
         ID_VILLAGER_BASE_F,
     };
 
-    const std::unordered_set<int16_t> unitsToExclude = {
+    const std::unordered_set<int> creatablesToExclude{
         HEAVY_CROSSBOWMAN,
         ID_VILLAGER_FISHER_M,
         ID_VILLAGER_BUILDER_M,
@@ -432,6 +608,8 @@ void showCosts(const genie::DatFile *const df) {
         WATER_BUFFALO,
         // todo: the monasteries might possibly not need to be explicitly excluded
         //  if some of the age.txt logic is generalized correctly.
+        // well, i think we actually need MONASTERY_DARK (104) from input to understand that monks are built there
+        // what if this data structure became just for filtering output, and we filtered input by type and class?
         MONASTERY_DARK,
         MONASTERY_FEUDAL,
         INDESTRUCT,
@@ -448,58 +626,106 @@ void showCosts(const genie::DatFile *const df) {
         TREBUCHET_UNPACKED,
     };
 
-    const std::unordered_map<int16_t, std::string> unitNameOverride = {
-        {HUSKARL_BARRACKS, "Huskarl (Barracks)"},
-        {ELITE_HUSKARL_BARRACKS, "Elite Huskarl (Barracks)"},
-        {SERJEANT, "Serjeant (Castle)"},
-        {ELITE_SERJEANT, "Elite Serjeant (Castle)"},
-        {DSERJEANT, "Serjeant (Donjon)"},
-        {ELITE_DSERJEANT, "Elite Serjeant (Donjon)"},
-        {TARKAN_STABLE, "Tarkan (Stable)"},
-        {ELITE_TARKAN_STABLE, "Elite Tarkan (Stable)"},
-        {KONNIK, "Konnik (Castle)"},
-        {ELITE_KONNIK, "Elite Konnik (Castle)"},
-        {KONNIK_2, "Konnik (Krepost)"},
-        {ELITE_KONNIK_2, "Elite Konnik (Krepost)"},
+    const std::unordered_map<int, std::string> nameOverride{
+        {HUSKARL_BARRACKS, "Huskarl (Barracks)"s},
+        {ELITE_HUSKARL_BARRACKS, "Elite Huskarl (Barracks)"s},
+        {SERJEANT, "Serjeant (Castle)"s},
+        {ELITE_SERJEANT, "Elite Serjeant (Castle)"s},
+        {DSERJEANT, "Serjeant (Donjon)"s},
+        {ELITE_DSERJEANT, "Elite Serjeant (Donjon)"s},
+        {TARKAN_STABLE, "Tarkan (Stable)"s},
+        {ELITE_TARKAN_STABLE, "Elite Tarkan (Stable)"s},
+        {KONNIK, "Konnik (Castle)"s},
+        {ELITE_KONNIK, "Elite Konnik (Castle)"s},
+        {KONNIK_2, "Konnik (Krepost)"s},
+        {ELITE_KONNIK_2, "Elite Konnik (Krepost)"s},
         // todo: maybe need some special handling for buildings.txt
-        {BATTERING_RAM, "Battering Ram (Cuman Feudal)"},
-        {ID_TRADE_CART_EMPTY, "Trade Cart"},
-        {RATHA_RANGED, "Ratha"},
-        {ELITE_RATHA_RANGED, "Elite Ratha"},
-        {ID_TRADE_CART_EMPTY, "Trade Cart"},
+        {BATTERING_RAM, "Battering Ram (Cuman Feudal)"s},
+        {ID_TRADE_CART_EMPTY, "Trade Cart"s},
+        {RATHA_RANGED, "Ratha"s},
+        {ELITE_RATHA_RANGED, "Elite Ratha"s},
+        {ID_TRADE_CART_EMPTY, "Trade Cart"s},
         // todo: probably these three will need some kind of special handling when appending age names for units.txt
-        {SIEGE_WORKSHOP_CUMAN_FEUDAL, "Siege Workshop (Cuman Feudal)"},
-        {HOUSE_NOMADS_CASTLE, "House (Nomads Castle)"},
-        {HOUSE_NOMADS_IMPERIAL, "House (Nomads Imperial)"},
-        {TREBUCHET, "Trebuchet"}};
+        {SIEGE_WORKSHOP_CUMAN_FEUDAL, "Siege Workshop (Cuman Feudal)"s},
+        {HOUSE_NOMADS_CASTLE, "House (Nomads Castle)"s},
+        {HOUSE_NOMADS_IMPERIAL, "House (Nomads Imperial)"s},
+        {TREBUCHET, "Trebuchet"s}};
 
-    enum UnitType { unit, building, tech };
-    const std::unordered_map<int16_t, UnitType> unitTypeOverride = {{TREBUCHET, UnitType::unit}};
+    const std::unordered_map<int, ItemType> typeOverride{{TREBUCHET, ItemType::unit}};
 
-    enum Age { dark = 0, feudal = 1, castle = 2, imperial = 3 };
-    const std::vector<Age> ages = {Age::dark, Age::feudal, Age::castle, Age::imperial};
+    const auto nameMap{[] {
+        std::unordered_map<int, std::string> val;
+        std::ifstream fin{languageFilePath};
+        std::string line;
+        while (std::getline(fin, line)) {
+            if (line.empty() || line.rfind("//", 0) == 0)
+                continue;
+            std::istringstream ss{line};
+            int id{};
+            std::string name;
+            ss >> id >> std::quoted(name);
+            val.try_emplace(id, name);
+        }
+        return val;
+    }()};
 
-    const uint8_t RESOURCE_MODIFIER = 1, ENABLE_DISABLE_UNIT = 2, UPGRADE_UNIT = 3;
-    const int16_t CURRENT_AGE = 6;
-    const int16_t SET = 0;
-    const int16_t NONE = -1;
-    const int16_t ALL = -1;
-    const int16_t ENABLE = 1;
+    const auto [units, buildings, techs]{[&] {
+        const CreatableContext creatableContext{
+            nameMap, creatablesToInclude, creatablesToExclude, nameOverride, typeOverride};
+        std::unordered_map<int, std::shared_ptr<Unit>> mutableUnitPtrs;
+        std::unordered_map<int, std::reference_wrapper<const Unit>> unitRefs;
+        std::unordered_map<int, std::shared_ptr<Building>> mutableBuildingPtrs;
+        std::unordered_map<int, std::reference_wrapper<const Building>> buildingRefs;
+        for (const auto &data : df->Civs[0].Units) {
+            if (Creatable::isBuilding(data, creatableContext)) {
+                const auto buildingPtr{std::make_shared<Building>(data, creatableContext)};
+                if (!buildingPtr->isRelevant())
+                    continue;
+                mutableBuildingPtrs.try_emplace(buildingPtr->getID(), buildingPtr);
+                buildingRefs.try_emplace(buildingPtr->getID(), *buildingPtr);
+            } else {
+                const auto unitPtr{std::make_shared<Unit>(data, creatableContext)};
+                if (!unitPtr->isRelevant())
+                    continue;
+                mutableUnitPtrs.try_emplace(unitPtr->getID(), unitPtr);
+                unitRefs.try_emplace(unitPtr->getID(), *unitPtr);
+            }
+        }
+        std::vector<std::shared_ptr<Tech>> mutableTechPtrs;
+        std::vector<std::reference_wrapper<const Tech>> techRefs;
+        for (size_t id{0}; id < df->Techs.size(); ++id) {
+            const auto tech{df->Techs[id]};
+            const genie::Effect *effectPtr{};
+            if (tech.EffectID != -1)
+                effectPtr = &df->Effects[tech.EffectID];
+            const auto techPtr{std::make_shared<Tech>(id, tech, effectPtr, nameMap)};
+            mutableTechPtrs.emplace_back(techPtr);
+            techRefs.emplace_back(*techPtr);
+        }
 
-    std::unordered_map<int16_t, std::string> nameMap;
-    std::ifstream fin(LANGUAGE_FILE_PATH);
-    std::string line;
-    while (std::getline(fin, line)) {
-        if (line.empty() || line.rfind("//", 0) == 0)
-            continue;
-        std::stringstream ss(line);
-        int16_t id;
-        std::string name;
-        ss >> id >> std::quoted(name);
-        nameMap[id] = name;
-    }
+        // todo: fix segfault
+        // for (const auto &techPtr : mutableTechPtrs)
+        //     techPtr->init(unitRefs, buildingRefs, techRefs);
+        // for (const auto &entry : mutableUnitPtrs)
+        //     entry.second->init(unitRefs, buildingRefs, techRefs);
+        // for (const auto &entry : mutableBuildingPtrs)
+        //     entry.second->init(unitRefs, buildingRefs, techRefs);
+
+        return std::tuple{
+            std::unordered_map<int, std::shared_ptr<const Unit>>{mutableUnitPtrs.begin(), mutableUnitPtrs.end()},
+            std::unordered_map<int, std::shared_ptr<const Building>>{mutableBuildingPtrs.begin(),
+                                                                     mutableBuildingPtrs.end()},
+            std::vector<std::shared_ptr<const Tech>>{mutableTechPtrs.begin(), mutableTechPtrs.end()}};
+    }()};
+
+    // const auto &tech{techs.at(0)};
+    // const auto &tech2{techs.at(0)};
+    // const auto equal{tech == tech2};
+
+    const std::vector<Age> ages{Age::dark, Age::feudal, Age::castle, Age::imperial};
 
     // todo: consider scrapping effect loop and just looping through all techs. why not? only one effect per tech.
+    // todo: when refactoring, these should be const after initialization
     std::unordered_set<Age> agesNotSeen(ages.begin(), ages.end());
     std::unordered_map<int16_t, Age> ageEffects;
     std::unordered_map<int16_t, std::unordered_set<int16_t>> enableEffects;
@@ -510,18 +736,26 @@ void showCosts(const genie::DatFile *const df) {
     std::unordered_map<Age, std::unordered_map<int16_t, std::unordered_set<int16_t>>> ageUpgrades;
     // does not include tech-upgraded units
     std::unordered_map<int16_t, std::unordered_map<Age, std::unordered_set<int16_t>>> unitUpgradesByAge;
-    for (int16_t effectID = 0; effectID < df->Effects.size(); ++effectID) {
-        const std::vector<genie::EffectCommand> &commands = df->Effects[effectID].EffectCommands;
+    for (size_t effectID{0}; effectID < df->Effects.size(); ++effectID) {
+        const auto &commands = df->Effects[effectID].EffectCommands;  // todo DRY
         for (const auto &c : commands) {
-            if (!agesNotSeen.empty() && c.Type == RESOURCE_MODIFIER && c.A == CURRENT_AGE && c.B == SET &&
-                c.C == NONE && std::trunc(c.D) == c.D) {
+            static constexpr uint8_t typeResourceModifier{1};
+            static constexpr uint8_t typeEnableDisableUnit{2};
+            static constexpr uint8_t typeUpgradeUnit{3};
+            static constexpr int16_t resourceCurrentAge{6};
+            static constexpr int16_t modeSet{0};
+            static constexpr int16_t resourceMultiplyNone{-1};
+            static constexpr int16_t modeEnable{1};
+            static constexpr int16_t modeAll{-1};
+            if (!agesNotSeen.empty() && c.Type == typeResourceModifier && c.A == resourceCurrentAge && c.B == modeSet &&
+                c.C == resourceMultiplyNone && std::trunc(c.D) == c.D) {
                 const auto age = static_cast<Age>(c.D);
-                if (const auto it = agesNotSeen.find(age); it != agesNotSeen.end()) {
+                if (const auto it{agesNotSeen.find(age)}; it != agesNotSeen.end()) {
                     agesNotSeen.erase(it);
-                    ageEffects[effectID] = age;
+                    ageEffects.try_emplace(effectID, age);
                     // any upgrade effects side-by-side with the age-up effect
-                    for (const auto &c2 : commands) {
-                        if (c2.Type == UPGRADE_UNIT && c2.C == ALL) {  // todo: DRY
+                    for (const auto &c2 : commands)
+                        if (c2.Type == typeUpgradeUnit && c2.C == modeAll) {  // todo: DRY
                             // todo: should i really put this unit in unitsByAge here?
                             // what if it's not enabled yet? e.g. monastery, town center
                             // i might need to track "enabledness" of a sequence of units more robustly
@@ -533,11 +767,10 @@ void showCosts(const genie::DatFile *const df) {
                             ageUpgrades[age][c2.A].emplace(c2.B);
                             unitUpgradesByAge[c2.A][age].emplace(c2.B);
                         }
-                    }
                 }
-            } else if (c.Type == ENABLE_DISABLE_UNIT && c.B == ENABLE) {
+            } else if (c.Type == typeEnableDisableUnit && c.B == modeEnable) {
                 enableEffects[effectID].emplace(c.A);  // the enabled unit's ID
-            } else if (c.Type == UPGRADE_UNIT && c.C == ALL) {
+            } else if (c.Type == typeUpgradeUnit && c.C == modeAll) {
                 upgradeEffects[effectID].emplace(c.A, c.B);
             }
         }
@@ -545,44 +778,41 @@ void showCosts(const genie::DatFile *const df) {
 
     std::unordered_map<int16_t, std::unordered_set<int16_t>> techBuildingRequirements;
 
-    const std::vector<genie::Unit> &units = df->Civs[0].Units;
+    const auto &unitData{df->Civs[0].Units};
 
-    for (const auto &unit : units) {
-        const bool hasTrainLocation = unit.Creatable.TrainLocationID != -1;  // todo: DRY
-        if (unit.Building.TechID != -1) {
+    for (const auto &unit : unitData) {
+        // const auto hasTrainLocation{unit.Creatable.TrainLocationID != -1};  // todo: DRY
+        if (unit.Building.TechID != -1)
             // do i want ALL the archery ranges, or just one archery range? for now, all
             techBuildingRequirements[unit.Building.TechID].emplace(unit.ID);
-        }
     }
 
     // std::multimap<int, std::string> unitsOutput;
     // std::multimap<std::tuple<int, int>, std::string> unitsOutput;
     // std::multimap<std::tuple<uint8_t, int16_t, std::string>, std::string> unitsOutput;
-    std::multimap<std::tuple<int, uint8_t, int16_t, std::string>, std::string> unitsOutput;
+    std::multimap<std::tuple<int, uint8_t, int16_t, std::string, int>, std::string> unitsOutput;
 
     std::unordered_map<Age, std::unordered_set<int16_t>> ageBuildingRequirements;
     std::unordered_map<Age, int16_t> ageTech;
 
     agesNotSeen.insert(ages.begin(), ages.end());
-    for (int16_t techID = 0; techID < df->Techs.size(); ++techID) {
-        const genie::Tech &tech = df->Techs[techID];
+    for (size_t techID{0}; techID < df->Techs.size(); ++techID) {
+        const auto &tech{df->Techs[techID]};
         if (!agesNotSeen.empty()) {
-            if (const auto it = ageEffects.find(tech.EffectID); it != ageEffects.end()) {
-                const Age age = it->second;
-                ageTech[age] = techID;
+            if (const auto it{ageEffects.find(tech.EffectID)}; it != ageEffects.end()) {
+                const auto age{it->second};
+                ageTech.try_emplace(age, techID);
                 agesNotSeen.erase(age);
                 std::deque<int16_t> stack(tech.RequiredTechs.begin(), tech.RequiredTechs.end());
                 while (!stack.empty()) {
-                    const int16_t requiredID = stack.front();
+                    const auto requiredID{stack.front()};
                     stack.pop_front();
-                    if (requiredID == -1) {
+                    if (requiredID == -1)
                         continue;
-                    }
-                    const genie::Tech &required = df->Techs[requiredID];
-                    if (const auto it = ageEffects.find(required.EffectID); it != ageEffects.end()) {
+                    const auto &required{df->Techs[requiredID]};
+                    if (const auto it2{ageEffects.find(required.EffectID)}; it2 != ageEffects.end())
                         continue;
-                    }
-                    const std::unordered_set<int16_t> &buildings = techBuildingRequirements[requiredID];
+                    const auto &buildings(techBuildingRequirements[requiredID]);
                     ageBuildingRequirements[age].insert(buildings.begin(), buildings.end());
 
                     stack.insert(stack.begin(), required.RequiredTechs.begin(), required.RequiredTechs.end());
@@ -597,139 +827,126 @@ void showCosts(const genie::DatFile *const df) {
         //  might as well stop looping through effects separately at the same time, right?
 
         // for any techs with unit-enable effects, determine what age the units should be categorized under.
-        if (const auto it = enableEffects.find(tech.EffectID); it != enableEffects.end()) {
-            // if tech has no obvious age prereq, assume it's dark age (like polish folwark)
+        if (const auto it{enableEffects.find(tech.EffectID)}; it != enableEffects.end()) {
             // (this logic is not very robust)
-            Age enabledBy = Age::dark;
-            // if the tech is itself an age tech, then of course that's the right age.
-            if (const auto it2 = ageEffects.find(tech.EffectID); it2 != ageEffects.end()) {
-                enabledBy = it2->second;
-            } else {
+            const auto enabledBy{[&] {
+                // if the tech is itself an age tech, then of course that's the right age.
+                if (const auto it2{ageEffects.find(tech.EffectID)}; it2 != ageEffects.end())
+                    return it2->second;
                 // otherwise, breadth-first search the graph of required techs until you find an
                 // age tech. we can't use the ageTech map because we haven't finished iterating through
                 // all the techs yet, but we can use the ageEffects map.
                 std::deque<int16_t> queue(tech.RequiredTechs.begin(), tech.RequiredTechs.end());
                 while (!queue.empty()) {
-                    const int16_t requiredID = queue.front();
+                    const auto requiredID{queue.front()};
                     queue.pop_front();
-                    if (requiredID == -1) {
+                    if (requiredID == -1)
                         continue;
-                    }
-                    const genie::Tech &required = df->Techs[requiredID];
-                    // if the directly-or-indirectly required tech is an age tech, then, that's the age we'll choose.
-                    if (const auto it2 = ageEffects.find(required.EffectID); it2 != ageEffects.end()) {
-                        enabledBy = it2->second;
-                        break;
-                    }
+                    const auto &required{df->Techs[requiredID]};
+                    // if the directly-or-indirectly required tech is an age tech, then, that's the age we'll
+                    // choose.
+                    if (const auto it3{ageEffects.find(required.EffectID)}; it3 != ageEffects.end())
+                        return it3->second;
                     queue.insert(queue.end(), required.RequiredTechs.begin(), required.RequiredTechs.end());
                 }
-            }
+                // if tech has no obvious age prereq, assume it's dark age (like polish folwark)
+                return Age::dark;
+            }()};
             // track the units enabled in an age. but if they are also upgraded to other units in or before that age,
             // track the upgraded unit(s) instead (blacksmith, monastery)
-            if (const auto it2 = ageUpgrades.find(enabledBy); it2 != ageUpgrades.end()) {
+            if (const auto it2{ageUpgrades.find(enabledBy)}; it2 != ageUpgrades.end()) {
                 // check each enabled unit
-                for (const int16_t unitID : it->second) {
-                    if (const auto it3 = it2->second.find(unitID); it3 != it2->second.end()) {
+                for (const auto unitID : it->second)
+                    if (const auto it3{it2->second.find(unitID)}; it3 != it2->second.end()) {
                         // todo: this line is partially redundant with adding units directly enabled by age tech
                         // in the earlier effect processing loop.
                         unitsByAge[enabledBy].insert(it3->second.begin(), it3->second.end());
                     } else {
                         unitsByAge[enabledBy].emplace(unitID);
                     }
-                }
             } else {
                 unitsByAge[enabledBy].insert(it->second.begin(), it->second.end());
             }
         }
 
-        std::vector<ResearchResourceCost> researchResourceCosts = tech.ResourceCosts;
-        if (hasNaturalResearchResourceCost(researchResourceCosts)) {
+        const Cost cost{tech.ResourceCosts};
+        if (!cost.empty()) {
             if (tech.ResearchLocation > 0) {
-                std::string name = nameMap[tech.LanguageDLLName];
-                if (name.empty()) {
-                    name = tech.Name;
-                }
+                const auto name{[&] {
+                    if (const auto it = nameMap.find(tech.LanguageDLLName); it != nameMap.end())
+                        return it->second;
+                    return tech.Name;
+                }()};
 
-                int totalCost = 0;
-                for (const ResearchResourceCost &cost : researchResourceCosts) {
-                    if (cost.Type != -1 && cost.Type < 4) {
-                        totalCost += cost.Amount;
-                    }
-                }
+                // const auto sortBy{std::tuple{0, 0, 0, name, 0}};
+                // const auto sortBy{std::tuple{0, 0, 0, ""s, 0}};
+                // const auto sortBy{std::tuple{0, 0, 0, ""s, cost.sum()}};
+                const auto sortBy{std::tuple{static_cast<int>(ItemType::tech), 0, 0, name, 0}};
+                // const auto sortBy{std::tuple{static_cast<int>(ItemType::tech), 0, 0, ""s, cost.sum()}};
 
-                // const auto sortBy = std::tuple(-1, -1, name);
-                // const auto sortBy = -1;
-                // const auto sortBy = totalCost;
-                const auto sortBy = std::tuple(UnitType::tech, -1, -1, name);
-                // const auto sortBy = std::tuple(UnitType::tech, totalCost);
+                const auto type{"tech"s};
 
-                const std::string type = "tech";
+                const auto info{std::to_string(techID)};
 
-                const std::string info = std::to_string(techID);
-
-                const std::string cost = costToString(researchResourceCosts) + " (" + std::to_string(totalCost) + ")";
-
-                unitsOutput.emplace(sortBy, "Cost of " + type + " " + name + " [" + info + "] is " + cost);
+                unitsOutput.emplace(sortBy,
+                                    "Cost of "s + type + " "s + name + " ["s + info + "] is "s + cost.toString());
             }
         }
     }
 
-    for (const genie::Unit &unit : units) {
-        if (hasNaturalResourceCost(unit)) {
-            const bool hasTrainLocation = unit.Creatable.TrainLocationID != -1;
-            if (unitsToInclude.find(unit.ID) != unitsToInclude.end() ||
-                unitsToExclude.find(unit.ID) == unitsToExclude.end() && hasTrainLocation) {
+    for (const auto &unit : unitData) {
+        const Cost cost{unit.Creatable.ResourceCosts};
+        if (!cost.empty()) {
+            const auto hasTrainLocation{unit.Creatable.TrainLocationID != -1};
+            if (creatablesToInclude.find(unit.ID) != creatablesToInclude.end() ||
+                (creatablesToExclude.find(unit.ID) == creatablesToExclude.end() && hasTrainLocation)) {
                 // if unit "available"/"enabled" from start without tech: dark age.
-                if (unit.Enabled) {
+                if (unit.Enabled)
                     unitsByAge[Age::dark].emplace(unit.ID);
-                }
 
-                std::string name;
-                if (const auto it = unitNameOverride.find(unit.ID); it != unitNameOverride.end()) {
-                    name = it->second;
-                } else {
-                    name = nameMap[unit.LanguageDLLName];
-                }
-                const std::string location =
-                    hasTrainLocation ? nameMap[units[unit.Creatable.TrainLocationID].LanguageDLLName] : "n/a";
+                const auto name{[&] {
+                    if (const auto it{nameOverride.find(unit.ID)}; it != nameOverride.end())
+                        return it->second;
+                    if (const auto it{nameMap.find(unit.LanguageDLLName)}; it != nameMap.end())
+                        return it->second;
+                    return unit.Name;
+                }()};
 
-                int totalCost = 0;
-                std::vector<ResourceCost> resourceCosts = unit.Creatable.ResourceCosts;
-                for (const auto &cost : resourceCosts) {
-                    if (cost.Type != -1 && cost.Type < 4) {
-                        totalCost += cost.Amount;
-                    }
-                }
+                // todo: generalize the name getting stuff
+                const auto location{
+                    hasTrainLocation ? nameMap.at(unitData[unit.Creatable.TrainLocationID].LanguageDLLName) : "n/a"s};
 
-                int type;
-                if (const auto it = unitTypeOverride.find(unit.ID); it != unitTypeOverride.end()) {
-                    type = it->second;
-                } else {
-                    type = unit.Type == genie::UnitType::UT_Building ? UnitType::building : UnitType::unit;
-                }
+                const auto type{[&] {
+                    if (const auto it{typeOverride.find(unit.ID)}; it != typeOverride.end())
+                        return it->second;
+                    return unit.Type == genie::UnitType::UT_Building ? ItemType::building : ItemType::unit;
+                }()};
 
-                // const auto sortBy = std::tuple(unit.Type, unit.Class, name);
-                // const auto sortBy = unit.Class;
-                // const auto sortBy = totalCost;
-                const auto sortBy = std::tuple(type, unit.Type, unit.Class, name);
-                // const auto sortBy = std::tuple(type, totalCost);
-                const std::string type_str = type == UnitType::building ? "building" : "unit";
+                // const auto sortBy{std::tuple{0, unit.Type, unit.Class, name, 0}};
+                // const auto sortBy{std::tuple{0, 0, unit.Class, ""s, 0}};
+                // const auto sortBy{std::tuple{0, 0, 0, ""s, cost.sum()}};
+                // const auto sortBy{std::tuple{static_cast<int>(type), unit.Type, unit.Class, name, 0}};
+                const auto sortBy{std::tuple{static_cast<int>(type), 0, 0, ""s, cost.sum()}};
+                const auto typeStr{type == ItemType::building ? "building"s : "unit"s};
 
-                // const std::string info = std::to_string(unit.ID) + " " + unit.Name + " @ " + location;
-                const std::string info = std::to_string(unit.Type) + " " + std::to_string(unit.Class) + " " +
-                                         std::to_string(unit.ID) + " - " + unit.Name + " @ " + location;
-
-                const std::string cost = costToString(resourceCosts) + " (" + std::to_string(totalCost) + ")";
+                // const auto info = std::to_string(unit.ID);
+                // const auto info = std::to_string(unit.ID) + " "s + unit.Name;
+                // const auto info = std::to_string(unit.ID) + " "s + unit.Name + " @ "s + location;
+                const auto info{std::to_string(unit.Type) + " "s + std::to_string(unit.Class) + " "s +
+                                std::to_string(unit.ID) + " - "s + unit.Name + " @ "s + location};
 
                 // todo: DRY
-                unitsOutput.emplace(sortBy, "Cost of " + type_str + " " + name + " [" + info + "] is " + cost);
+                unitsOutput.emplace(sortBy,
+                                    "Cost of "s + typeStr + " "s + name + " ["s + info + "] is "s + cost.toString());
             }
         }
     }
 
-    std::ofstream unitsFile(OUTPUT_PATH / "units.txt");
-    for (const auto &entry : unitsOutput) {
-        unitsFile << entry.second << std::endl;
+    std::filesystem::path outputFsPath{outputPath};
+    {
+        std::ofstream unitsFile{outputFsPath / "units.txt"};
+        for (const auto &entry : unitsOutput)
+            unitsFile << entry.second << '\n';
     }
 
     std::map<Age, std::multimap<std::tuple<uint8_t, uint8_t>, std::string>> agesOutput;
@@ -737,29 +954,34 @@ void showCosts(const genie::DatFile *const df) {
     // todo: handle units here, not just buildings
     for (const auto &[age, ageUnits] : unitsByAge) {
         std::unordered_set<int16_t> nextAgeRequirements;
-        if (const auto it = std::next(std::find(ages.begin(), ages.end(), static_cast<Age>(age))); it != ages.end()) {
+        if (const auto it{std::next(std::find(ages.begin(), ages.end(), static_cast<Age>(age)))}; it != ages.end()) {
             // find the next age, if exists
-            const Age nextAge = *it;
+            const auto nextAge{*it};
             nextAgeRequirements = ageBuildingRequirements[nextAge];
         }
-        for (const int16_t &unitID : ageUnits) {
-            const genie::Unit &unit = units[unitID];
-            if (unit.Type == genie::UnitType::UT_Building && (unitsToInclude.find(unit.ID) != unitsToInclude.end() ||
-                                                              unitsToExclude.find(unit.ID) == unitsToExclude.end() &&
-                                                                  unit.Creatable.TrainLocationID != -1)) {  // todo: DRY
-                std::string name;                                                                           // todo: DRY
-                if (const auto it = unitNameOverride.find(unitID); it != unitNameOverride.end()) {
-                    name = it->second;
-                } else {
-                    name = nameMap[unit.LanguageDLLName];
-                }
-                std::string output;
-                if (const auto it = std::find(nextAgeRequirements.begin(), nextAgeRequirements.end(), unitID);
-                    it != nextAgeRequirements.end()) {
-                    // mark buildings involved in age-up requirements
-                    output += "(*) ";
-                }
-                output += name + " [" + std::to_string(unitID) + "]";
+        for (const auto &unitID : ageUnits) {
+            const auto &unit{unitData[unitID]};
+            if (unit.Type == genie::UnitType::UT_Building &&
+                (creatablesToInclude.find(unit.ID) != creatablesToInclude.end() ||
+                 (creatablesToExclude.find(unit.ID) == creatablesToExclude.end() &&
+                  unit.Creatable.TrainLocationID != -1))) {  // todo: DRY
+                const auto name{[&] {                        // todo: DRY
+                    if (const auto it{nameOverride.find(unitID)}; it != nameOverride.end())
+                        return it->second;
+                    if (const auto it{nameMap.find(unit.LanguageDLLName)}; it != nameMap.end())
+                        return it->second;
+                    return unit.Name;
+                }()};
+                const auto output{[&] {
+                    std::string val;
+                    if (const auto it{std::find(nextAgeRequirements.begin(), nextAgeRequirements.end(), unitID)};
+                        it != nextAgeRequirements.end()) {
+                        // mark buildings involved in age-up requirements
+                        val += "(*) "s;
+                    }
+                    val += name + " ["s + std::to_string(unitID) + "]"s;
+                    return val;
+                }()};
                 // todo: add resource costs
                 // sort by position of the build button (e.g. house, mill, mining camp, etc.)
                 agesOutput[age].emplace(std::tuple(unit.InterfaceKind, unit.Creatable.ButtonID), output);
@@ -767,12 +989,13 @@ void showCosts(const genie::DatFile *const df) {
         }
     }
 
-    std::ofstream agesFile(OUTPUT_PATH / "ages.txt");
-    for (const auto &[age, entries] : agesOutput) {
-        // todo: probably add resource costs for age techs
-        agesFile << nameMap[df->Techs[ageTech[age]].LanguageDLLName] << std::endl;
-        for (const auto &entry : entries) {
-            agesFile << '\t' << entry.second << std::endl;
+    {
+        std::ofstream agesFile{outputFsPath / "ages.txt"s};
+        for (const auto &[age, entries] : agesOutput) {
+            // todo: probably add resource costs for age techs
+            agesFile << nameMap.at(df->Techs[ageTech[age]].LanguageDLLName) << '\n';
+            for (const auto &entry : entries)
+                agesFile << '\t' << entry.second << '\n';
         }
     }
 }
