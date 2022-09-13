@@ -46,21 +46,25 @@ notes -
 a "tech" (e.g. crossbowman upgrade)
 has "required techs" (e.g. castle age and 'shadow archery range' (?)),
 a "research location" (e.g. archery range),
-and an "effect" (e.g. turn existing archers into crossbowmen)
+and an "effect" (e.g. upgrade archers to crossbowmen)
 crossbowmen can't be built until the tech is researched,
-probably because of the tech tree.
+because they start out without a "build location" of their own,
+and the upgrade effect lets them inherit the build location of archers.
+if the tech has no research location, it is automatically
+researched once all its required techs are researched.
 
 markets require having built a mill,
-probably because of the tech tree.
+because markets start disabled, but
+mills are marked "initiates technology" for the "shadow mill" tech,
+and there is a no-research-location "enable market" tech
+requiring the shadow mill tech and the feudal age tech,
+having an effect to enable the market.
 
 buildings required for age-up are defined as required techs for the age tech.
 
-what defines the fact that building a mill triggers the "shadow mill -- age one" tech?
-the "initiates technology" attribute on the mill.
-
-it's possible that the upgrade effect will, at runtime,
+the upgrade effect will, at runtime,
 copy the trainable/researchable units/techs from the one to the other when they are buildings.
-otherwise, unclear how feudal barracks is connected to any of its units/techs. test this.
+todo consider testing this, e.g. upgrade dark age barracks to feudal age archery range or something.
 */
 
 // todo: flag age up costs
@@ -84,49 +88,6 @@ otherwise, unclear how feudal barracks is connected to any of its units/techs. t
 // todo: consider civ bonuses (like cuman ranges -75 wood) that allow infinite resources (kinda hard)
 // todo: distinguish cheap units that are gated behind expensive techs from those that aren't (hard)
 
-class BaseTest {
-  public:
-    BaseTest(int id) : id{id} {}
-    BaseTest(const BaseTest &) = delete;
-    BaseTest &operator=(const BaseTest &) = delete;
-    BaseTest(BaseTest &&) = delete;
-    BaseTest &operator=(BaseTest &&) = delete;
-    virtual ~BaseTest() = default;
-
-    // bool operator==(const BaseTest &other) const noexcept { return id == other.id; }
-
-    int getId() const noexcept { return id; }
-
-  private:
-    const int id;
-};
-
-namespace std {
-template <> struct hash<std::reference_wrapper<const BaseTest>> {
-    size_t operator()(const BaseTest &item) const noexcept { return hash<int>{}(item.getId()); }
-};
-
-// template <> struct hash<BaseTest> {
-//     size_t operator()(std::reference_wrapper<BaseTest> item) noexcept {
-//         return hash<int>{}(item.get().getId());
-//     }
-// };
-
-// template <> struct hash<BaseTest> { // must be ref to const
-//     size_t operator()(std::reference_wrapper<BaseTest> item) noexcept {
-//         return hash<int>{}(item.get().getId());
-//     }
-// };
-
-// template <class T> struct equal_to<BaseTest> {
-//     size_t operator()(const BaseTest &lhs, const BaseTest &rhs) const noexcept {
-//         return equal_to<int>{}(lhs.getId(), rhs.getId());
-//     }
-// };
-}  // namespace std
-
-// void collect() { std::unordered_set<std::reference_wrapper<const BaseTest>> set; }
-
 namespace {
 
 constexpr const char *const languageFilePath{
@@ -135,14 +96,6 @@ constexpr const char *const languageFilePath{
 constexpr const char *const outputPath{"build"};
 
 enum class ItemType { unit, building, tech };
-
-class Unit;
-
-class Tech;
-
-class Building;
-
-// class Game {};
 
 // todo rename to Age when done with existing Age type?
 class AgeC {
@@ -220,26 +173,23 @@ class Cost {
     int stone;
 };
 
+class Unit;
+
+class Tech;
+
+class Building;
+
 template <class TGenie> class GenieItem {
   public:
-    // todo: isn't there some way to implement these better?
-    // template <class Key> struct Hash {
-    //     // also, why can i access id directly when Key is Tech but not when Key is Unit...
-    //     // size_t operator()(const Key &key) const noexcept { return std::hash<int>{}(key.id); }
-    //     size_t operator()(const Key &key) const noexcept { return std::hash<int>{}(key.getID()); }
-    // };
-
-    template <class Key> struct Hash {
-        // also, why can i access id directly when Key is Tech but not when Key is Unit...
-        // size_t operator()(const Key &key) const noexcept { return std::hash<int>{}(key.id); }
-        size_t operator()(const Key &key) const noexcept {
-            return std::hash<int>{}(key.getID());
-        }  // TODO segfaults for Tech ?? so... test calling it directly
+    template <class T> struct Hash {
+        std::size_t operator()(const std::reference_wrapper<const T> &key) const noexcept {
+            return std::hash<const T *>{}(&key.get());
+        }
     };
-
     template <class T> struct Equal {
-        size_t operator()(const T &lhs, const T &rhs) const noexcept {
-            return std::equal_to<int>{}(lhs.getID(), rhs.getID());
+        std::size_t operator()(const std::reference_wrapper<const T> &lhs,
+                               const std::reference_wrapper<const T> &rhs) const noexcept {
+            return std::equal_to<const T *>{}(&lhs.get(), &rhs.get());
         }
     };
 
@@ -248,14 +198,6 @@ template <class TGenie> class GenieItem {
     GenieItem(GenieItem &&) = delete;
     GenieItem &operator=(GenieItem &&) = delete;
     virtual ~GenieItem() = default;
-
-    // bool operator==(const GenieItem &lhs, const GenieItem &rhs) const noexcept {
-    //     return lhs.id == rhs.id;
-    // }
-
-    // bool operator==(const GenieItem &rhs) const noexcept {
-    //     return this == &rhs;
-    // }
 
     void init(const std::unordered_map<int, std::reference_wrapper<const Unit>> &units,
               const std::unordered_map<int, std::reference_wrapper<const Building>> &buildings,
@@ -281,6 +223,8 @@ template <class TGenie> class GenieItem {
              [[maybe_unused]] const std::vector<std::reference_wrapper<const Tech>> &techs) {}
 
     const TGenie &getData() const noexcept { return data; }
+
+    bool isInitialized() const noexcept { return initialized; }
 
   private:
     const int id;
@@ -340,12 +284,6 @@ class Creatable : public GenieItem<genie::Unit> {
               return true;
           }()} {}
 
-    Creatable(const Creatable &) = delete;
-    Creatable &operator=(const Creatable &) = delete;
-    Creatable(Creatable &&) = delete;
-    Creatable &operator=(Creatable &&) = delete;
-    ~Creatable() override = default;
-
     static bool isBuilding(const genie::Unit &data, const CreatableContext &context) {
         if (const auto it{context.typeOverride.get().find(data.ID)}; it != context.typeOverride.get().end())
             return it->second == ItemType::building;
@@ -364,31 +302,35 @@ class Creatable : public GenieItem<genie::Unit> {
     const bool relevant;
 };
 
-// todo: consistency between Id and ID
-
 class Unit : public Creatable {
   public:
     Unit(const genie::Unit &data, const CreatableContext &creatableContext) : Creatable{data, creatableContext} {}
 
+    const Building *getTrainLocationPtr() const noexcept {
+        assert(isInitialized());
+        return trainLocationPtr;
+    }
+
+    // todo remove maybe_unused
   protected:
-    void postInit(const std::unordered_map<int, std::reference_wrapper<const Unit>> &units,
+    void postInit([[maybe_unused]] const std::unordered_map<int, std::reference_wrapper<const Unit>> &units,
                   const std::unordered_map<int, std::reference_wrapper<const Building>> &buildings,
-                  const std::vector<std::reference_wrapper<const Tech>> &techs) override {
+                  [[maybe_unused]] const std::vector<std::reference_wrapper<const Tech>> &techs) override {
         // todo
         // Flemish Militia (1699): 109
         // Villager (Male) (83): 109
         // Missionary (775): 104
         // Monk (125): 104
-        if (auto locationId{getData().Creatable.TrainLocationID}; locationId != -1)
+        if (auto locationID{getData().Creatable.TrainLocationID}; locationID != -1)
             try {
-                trainLocation = &buildings.at(locationId).get();
+                trainLocationPtr = &buildings.at(locationID).get();
             } catch (const std::out_of_range &) {
-                std::cout << getName() << " ("s << getID() << "): "s << locationId << '\n';
+                std::cout << getName() << " ("s << getID() << "): "s << locationID << '\n';
             }
     }
 
   private:
-    Building const *trainLocation{};
+    const Building *trainLocationPtr{};
 };
 
 class Building : public Creatable {
@@ -397,15 +339,16 @@ class Building : public Creatable {
 };
 
 // things i want to be able to see on this class...
-// - what is its name (via language dll or internal name)?
-// - what is its resource cost?
-// - what building is it researched at, if any?
-// - is it an age tech? for what age?
-// - what required tech objects does it have?
+// - what is its name (via language dll or internal name)? done
+// - what is its resource cost? done
+// - what building is it researched at, if any? done
+// - is it an age tech? for what age? done, maybe
+// - what required tech objects does it have? done (not transitive)
 //   - whose job is it to decide to construct the required tech objects? i guess we need
 //     a global list of techs by ID to draw from? should the constructor register them in that list?
-// - what units does it upgrade, and to what?
-// - what units does it enable?
+//     done
+// - what units does it upgrade, and to what? done (not unit group)
+// - what units does it enable? done (not unit group)
 // - [maybe] what are all the tech objects that require this tech?
 
 // object is not fully usable until all related objects are constructed
@@ -442,17 +385,11 @@ class Tech : public GenieItem<genie::Tech> {
                            assert(command.B == modeSet && command.C == resourceMultiplyNone);
                            val.ageSet.emplace(command.D);
                        } else if (command.Type == typeEnableDisableUnit && command.B == modeEnable)
-                           val.unitIdsEnabled.emplace(command.A);  // the enabled unit's ID
+                           val.unitIDsEnabled.emplace(command.A);  // the enabled unit's ID
                        else if (command.Type == typeUpgradeUnit && command.C == modeAll)
-                           val.unitIdsUpgraded.try_emplace(command.A, command.B);
+                           val.unitIDsUpgraded.try_emplace(command.A, command.B);
                    return val;
                }()} {}
-
-    Tech(const Tech &) = delete;
-    Tech &operator=(const Tech &) = delete;
-    Tech(Tech &&) = delete;
-    Tech &operator=(Tech &&) = delete;
-    ~Tech() override = default;
 
     void postInit(const std::unordered_map<int, std::reference_wrapper<const Unit>> &units,
                   const std::unordered_map<int, std::reference_wrapper<const Building>> &buildings,
@@ -465,14 +402,14 @@ class Tech : public GenieItem<genie::Tech> {
             if (id != -1)
                 requiredTechs.emplace(techs.at(id));
 
-        for (const auto &id : unitIdsEnabled)
+        for (const auto &id : unitIDsEnabled)
             if (auto it{units.find(id)}; it != units.end())
                 unitsEnabled.emplace(it->second);
             else if (auto it2{buildings.find(id)}; it2 != buildings.end())
                 buildingsEnabled.emplace(it2->second);
         // others are irrelevant
 
-        for (const auto &[id1, id2] : unitIdsUpgraded)
+        for (const auto &[id1, id2] : unitIDsUpgraded)
             if (auto it{units.find(id1)}; it != units.end()) {
                 if (auto it2{units.find(id2)}; it2 != units.end())
                     unitsUpgraded.try_emplace(it->second, it2->second);
@@ -486,28 +423,33 @@ class Tech : public GenieItem<genie::Tech> {
     // maybe just expose methods like "hasRequiredTech"?
     const std::unordered_set<std::reference_wrapper<const Tech>, Hash<Tech>, Equal<Tech>> &
     getRequiredTechs() const noexcept {
+        assert(isInitialized());
         return requiredTechs;
     }
 
     const std::unordered_set<std::reference_wrapper<const Unit>, Hash<Unit>, Equal<Unit>> &
     getUnitsEnabled() const noexcept {
+        assert(isInitialized());
         return unitsEnabled;
     }
 
     const std::unordered_set<std::reference_wrapper<const Building>, Hash<Building>, Equal<Building>> &
     getBuildingsEnabled() const noexcept {
+        assert(isInitialized());
         return buildingsEnabled;
     }
 
     const std::unordered_map<std::reference_wrapper<const Unit>, std::reference_wrapper<const Unit>, Hash<Unit>,
                              Equal<Unit>> &
     getUnitsUpgraded() const noexcept {
+        assert(isInitialized());
         return unitsUpgraded;
     }
 
     const std::unordered_map<std::reference_wrapper<const Building>, std::reference_wrapper<const Building>,
                              Hash<Building>, Equal<Building>> &
     getBuildingsUpgraded() const noexcept {
+        assert(isInitialized());
         return buildingsUpgraded;
     }
 
@@ -516,10 +458,10 @@ class Tech : public GenieItem<genie::Tech> {
   private:
     struct EffectInfo {
         std::optional<AgeC> ageSet{};
-        std::unordered_set<int> unitIdsEnabled;
-        std::unordered_set<int> buildingIdsEnabled;
-        std::unordered_map<int, int> unitIdsUpgraded;
-        std::unordered_map<int, int> buildingIdsUpgraded;
+        std::unordered_set<int> unitIDsEnabled;
+        std::unordered_set<int> buildingIDsEnabled;
+        std::unordered_map<int, int> unitIDsUpgraded;
+        std::unordered_map<int, int> buildingIDsUpgraded;
     };
 
     Tech(int id, const genie::Tech &data, const std::unordered_map<int, std::string> &nameMap,
@@ -532,11 +474,11 @@ class Tech : public GenieItem<genie::Tech> {
                     }(),
                     Cost{data.ResourceCosts},
                     data},
-          ageSet{effectInfo.ageSet}, unitIdsEnabled{effectInfo.unitIdsEnabled}, unitIdsUpgraded{
-                                                                                    effectInfo.unitIdsUpgraded} {}
+          ageSet{effectInfo.ageSet}, unitIDsEnabled{effectInfo.unitIDsEnabled}, unitIDsUpgraded{
+                                                                                    effectInfo.unitIDsUpgraded} {}
 
-    const std::unordered_set<int> unitIdsEnabled;
-    const std::unordered_map<int, int> unitIdsUpgraded;
+    const std::unordered_set<int> unitIDsEnabled;
+    const std::unordered_map<int, int> unitIDsUpgraded;
     const Building *researchLocation{};
     std::unordered_set<std::reference_wrapper<const Tech>, Hash<Tech>, Equal<Tech>> requiredTechs;
     std::unordered_set<std::reference_wrapper<const Unit>, Hash<Unit>, Equal<Unit>> unitsEnabled;
@@ -553,18 +495,6 @@ class Tech : public GenieItem<genie::Tech> {
 // assert that there aren't duplicates or disconnected ages or whatever
 enum class Age { dark = 0, feudal = 1, castle = 2, imperial = 3 };
 }  // namespace
-
-namespace std {
-template <class T> struct hash<std::reference_wrapper<const GenieItem<T>>> {
-    size_t operator()(const GenieItem<T> &item) const noexcept { return hash<int>{}(item.getID()); }
-};
-
-// template <class T> struct equal_to<GenieItem<T>> {
-//     size_t operator()(const GenieItem<T> &lhs, const GenieItem<T> &rhs) const noexcept {
-//         return equal_to<int>{}(lhs.id, rhs.id);
-//     }
-// };
-}  // namespace std
 
 // general plan for this method
 // 1. input
@@ -588,6 +518,9 @@ void showCosts(const genie::DatFile *const df) {
         ID_VILLAGER_BASE_F,
     };
 
+    // todo probably plenty of these can be excluded dynamically based on
+    // excluding everything without a train location and/or not enabled
+    // while taking into account tech enablings and upgrades
     const std::unordered_set<int> creatablesToExclude{
         HEAVY_CROSSBOWMAN,
         ID_VILLAGER_FISHER_M,
@@ -729,7 +662,7 @@ void showCosts(const genie::DatFile *const df) {
         }
         std::vector<std::shared_ptr<Tech>> mutableTechPtrs;
         std::vector<std::reference_wrapper<const Tech>> techRefs;
-        for (size_t id{0}; id < df->Techs.size(); ++id) {
+        for (std::size_t id{0}; id < df->Techs.size(); ++id) {
             const auto &tech{df->Techs[id]};
             const genie::Effect *effectPtr{};
             if (tech.EffectID != -1)
@@ -771,7 +704,7 @@ void showCosts(const genie::DatFile *const df) {
     std::unordered_map<Age, std::unordered_map<int16_t, std::unordered_set<int16_t>>> ageUpgrades;
     // does not include tech-upgraded units
     std::unordered_map<int16_t, std::unordered_map<Age, std::unordered_set<int16_t>>> unitUpgradesByAge;
-    for (size_t effectID{0}; effectID < df->Effects.size(); ++effectID) {
+    for (std::size_t effectID{0}; effectID < df->Effects.size(); ++effectID) {
         const auto &commands = df->Effects[effectID].EffectCommands;  // todo DRY
         for (const auto &c : commands) {
             static constexpr uint8_t typeResourceModifier{1};
@@ -830,7 +763,7 @@ void showCosts(const genie::DatFile *const df) {
     std::unordered_map<Age, int16_t> ageTech;
 
     agesNotSeen.insert(ages.begin(), ages.end());
-    for (size_t techID{0}; techID < df->Techs.size(); ++techID) {
+    for (std::size_t techID{0}; techID < df->Techs.size(); ++techID) {
         const auto &tech{df->Techs[techID]};
         if (!agesNotSeen.empty()) {
             if (const auto it{ageEffects.find(tech.EffectID)}; it != ageEffects.end()) {

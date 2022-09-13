@@ -23,6 +23,62 @@ changes every age:
 -----------------------------------------------------------
 
 old notes:
+
+town centers (probably the attached segments..?)
+484 RTWC3X @ Builder
+597 RTWC4X @ Builder
+617 RTWC2X @ Builder
+621 RTWC1X @ Builder
+109 RTWC only one that's not Hidden
+feudal
+    109 RTWC -> 71 RTWC2
+    618 RTWC1A -> 614 RTWC2A
+    619 RTWC1B -> 615 RTWC2B
+    620 RTWC1C -> 616 RTWC2C
+    621 RTWC1X -> 617 RTWC2X
+castle
+    109 RTWC -> 141 RTWC3
+    618 RTWC1A -> 481 RTWC3A
+    619 RTWC1B -> 482 RTWC3B
+    620 RTWC1C -> 483 RTWC3C
+    621 RTWC1X -> 484 RTWC3X
+imperial
+    109 RTWC -> 142 RTWC4
+    618 RTWC1A -> 611 RTWC4A
+    619 RTWC1B -> 612 RTWC4B
+    620 RTWC1C -> 613 RTWC4C
+    621 RTWC1X -> 597 RTWC4X
+
+// i have a class heirarchy like:
+// template <class T> class Base;
+// class Middle : public Base<A>;
+// class Derived1 : public Middle;
+// class Derived2 : public Middle;
+// class Derived3 : public Base<B>;
+
+// the Derived1,2,3 classes each have members like unordered_set<reference_wrapper<const Derived1>> and likewise for
+//   Derived2 and Derived3.
+// these sets should use reference semantics (or, if necessary, value semantics but only based on the members of Base).
+// this means specializing std::hash and std::equal_to.
+// i could specialize them once for each derived class, but that's a ton of copy+pasted code, and there has to be a
+// better way. if i specialize them like: template <class T> struct hash<reference_wrapper<const T>>,
+//   then, because it's in std namespace, according to the C++ standard, i need to prevent that template from
+//   substituting non-user-defined classes for T.
+// i'm on c++17, so i can't use concepts, and the only other thing i can see is static_assert(is_base_of<Base, T>).
+// but Base isn't a type (it's templated), so i have to introduce empty class BaseBase, so i can say
+//   static_assert(is_base_of<BaseBase, T>).
+// so where can i put these specializations?
+// i can't put the specializations after the Derived class definitions,
+//   because then their unordered_set members don't see them.
+// i can't put the specializations before the Derived class definitions,
+//   because then they are generated as soon as the compiler sees the unordered_set members of the Derived classes,
+//   and is_base_of complains that T (Derived1,2,3) is an incomplete type.
+// if i define the specializations before, forward-declare the operator() methods, and define those methods after,
+//   along with the static_assert, then the static_assert doesn't actually stop the template from being substituted.
+// seems like a dead end, and the only real solution before C++20 is to include template <class T> struct Hash
+//   and template <class T> struct Equal in Base, and have every unordered_set be like
+//   unordered_set<reference_wrapper<const Derived1>, Hash<Derived1>, Equal<Derived1>>, which is awful.
+
 // trade cart * 2!
 // - techtree: 128empty, not 204full
 // - ingame: 128empty, not 204full
@@ -80,27 +136,3 @@ old notes:
 // ratha * 2!
 // elite ratha * 2!
 //   pretty sure they are built as ranged, not melee.
-town centers (probably the attached segments..?)
-484 RTWC3X @ Builder
-597 RTWC4X @ Builder
-617 RTWC2X @ Builder
-621 RTWC1X @ Builder
-109 RTWC only one that's not Hidden
-feudal
-    109 RTWC -> 71 RTWC2
-    618 RTWC1A -> 614 RTWC2A
-    619 RTWC1B -> 615 RTWC2B
-    620 RTWC1C -> 616 RTWC2C
-    621 RTWC1X -> 617 RTWC2X
-castle
-    109 RTWC -> 141 RTWC3
-    618 RTWC1A -> 481 RTWC3A
-    619 RTWC1B -> 482 RTWC3B
-    620 RTWC1C -> 483 RTWC3C
-    621 RTWC1X -> 484 RTWC3X
-imperial
-    109 RTWC -> 142 RTWC4
-    618 RTWC1A -> 611 RTWC4A
-    619 RTWC1B -> 612 RTWC4B
-    620 RTWC1C -> 613 RTWC4C
-    621 RTWC1X -> 597 RTWC4X
