@@ -65,6 +65,143 @@ buildings required for age-up are defined as required techs for the age tech.
 the upgrade effect will, at runtime,
 copy the trainable/researchable units/techs from the one to the other when they are buildings.
 todo consider testing this, e.g. upgrade dark age barracks to feudal age archery range or something.
+
+dunno what would happen if you upgraded from one unit to another
+that didn't share the same train location and train button ID.
+todo test?
+
+enabling scout cavalry disables xolotl warrior,
+since they have the same train location and same train button ID.
+
+setting a tech costs to 0 (and/or research time to 0?) results in it
+being automatically researched if/when its requirements are met
+(e.g. italian team bonus -> condottiero, magyar bonus -> free forging etc)
+todo test this?
+    could not reproduce problem with condotierro... maybe only research time matters?
+
+disabling an (active) tech that has an effect that disables a tech
+results in enabling the second tech?
+e.g. vietnamese team bonus, enabling imperial skirm
+
+every civ is linked to a tech tree effect for disabling techs and some attribute changes
+other civ bonuses, maybe because they need to interact with other techs,
+    use techs named c-bonus with civ requirement and no cost.
+
+most civ bonuses should apply AFTER random costs changes,
+so anything implemented as an additive decrease in cost might give infinite resources,
+but only if they do still have some cost of that resource type that is smaller than the magnitude of decrease.
+
+unclear how post-imperial age is implemented.
+does it automatically research all techs that have any cost at all, if the requirements are fulfilled?
+
+when tech costs are scrambled, civ/team bonuses based on
+auto-researching tech should fail most of the time,
+since they only set food cost to zero.
+test this: berber team, italians team, chinese team.
+tech effects change tech costs by setting individual cost types (+/-/set).
+likely to override or fail in the presence of random costs changes.
+tech effects change unit costs by setting or multiplying special attributes for costs (100,103-106)
+for units or classes of units.
+likely to apply AFTER random costs changes.
+
+todo test overflow breaking point for spies. does it overflow separately for each resource type?
+
+any-civ techs involving costs:
+supplies (militia line cost -food)
+    maybe <=15 free food from militia line
+    todo IN DOUBT?
+shipwright (less ship wood cost via multiply)
+
+civ/team bonuses involving costs:
+berber team (genitour unlocked)
+    probably broken if hidden genitour tech got more than food cost
+    COULD NOT REPRODUCE
+bohemians (blacksmiths, universities -wood)
+    maybe free <=100 wood in each age from building blacksmiths, universities
+bohemian ut hussite reforms (monks, monastery techs cost +food, -gold)
+    maybe <=100 free gold from monk
+    probably 500-1000 free gold from cancelling heresy (castle), faith (imperial))
+bulgarians (blacksmith, sw techs -food)
+    probably little free food in every age?
+    GOOD, CONFIRMED
+burmese (eco techs cost -food)
+    probably free food
+burmese (stable techs cost -food, -gold)
+    probably ~100 free food, gold
+burmese (monastery techs cost -gold)
+    probably ~200 free gold from cancelling redemption (castle), ~400 from faith (imperial)
+    GOOD, CONFIRMED
+byzantine (town watch food cost set to 0, town patrol food & gold cost set to 0)
+byzantine (imperial age cost -gold -food)
+    probably 200+ free food & gold from imperial age
+    GOOD, CONFIRMED
+chinese team (more food on farms)
+    probably will fail because of extra costs on hidden tech
+cumans (archery range, stable costs -wood)
+    maybe little bit of free wood in any age
+dravidians (barracks techs cost -food -gold)
+    probably ~100 free food, gold
+french (horse collar line food, wood cost set to 0)
+gurjara ut kshatriyas (less military food cost via multiply)
+    kshatriyas+supplies (militia line food cost set to 30)
+italians (age up food costs set to 425, 680, 850; gold costs set to 170, 680)
+    instead of cheaper age up, probably more expensive age up
+italians (dock/university tech costs -food,-wood,-gold)
+    a LOT of techs that could give free resources. galleon food/wood, dry dock food/gold, e cannon gal f/g, shipwright f/g
+    heated shot, treadmill crane food
+    OKAY, CONFIRMED
+italians ut silk road (less trade unit cost via multiply)
+italians team (condotierro unlocked)
+    probably broken if hidden condotierro tech got more than food cost
+    COULD NOT REPRODUCE
+magyars (forging line food/gold cost set to 0, time set to 0)
+    instead of free forging line, may result in tech costing only wood/stone and researching instantly
+    todo test
+magyar ut corvinian army (magyar huszar gold cost set to 0)
+malay ut forced levy (militia line cost +food, -gold)
+    maybe <=20 free gold from militia line
+persian ut kamandaran (archer line cost -gold, +wood)
+    maybe <=45 free gold from archer line
+    OKAY, CONFIRMED
+pole ut szlachta privileges (less knight line gold cost via multiply)
+saracens(market cost -wood)
+    probably free <=100 wood from building market in one age or another
+    OKAY, CONFIRMED (get free wood when placed, lose it when deleted unless it's fully built)
+sicilians team (less transport ship cost via multiply)
+slavs (supplies food/gold cost set to 0, time set to 0)
+    instead of free supplies, may result in tech costing only wood/stone and researching instantly
+slav ut detinets (castle/tower cost +wood, -stone)
+    probably <=50 free stone from towers, <=260 free stone from castles
+teutons (murder holes, herbal medicine costs set to 0)
+turks (chemistry, light cav, hussar costs set to 0)
+turks (cannon galleon tech, bombard tower tech cost -food -wood)
+    probably 150+ free food/wood from cannon galleon tech, bombard tower tech
+turks (e cannon galleon tech cost -food -gold)
+    probably 200+ free food/gold from e cannon galleon tech
+vikings (wheelbarrow, hand cart costs set to 0)
+vikings (less warship cost via multiply)
+vikings team (less dock cost via multiply)
+
+todo check supplies
+
+
+todo tech 606 seems to be a redundant? way to upgrade to elite genitour in post-imperial; should break some of the time.
+todo check what enables tech 790,791, it enabling winged hussar should break some of the time
+    unclear
+
+most of the techs that replace one kind of cost with another for some unit or tech
+    provide an opportunity for free resources of the first kind by queuing/placing
+    and then cancelling it
+
+most of the techs that reduce cost(s) by a percentage work normally on the
+    correct units, after the costs were randomized.
+
+most of the civ bonuses for "free techs" work by setting the usual costs of those
+    techs to 0 & research time to 0. if they got randomized to have
+    different other resource type costs, they won't be free and have to be researched manually (instantly)
+    probably.
+
+todo tabulate units trainable by each civilization, to see who has more
 */
 
 // todo: flag age up costs
@@ -90,10 +227,10 @@ todo consider testing this, e.g. upgrade dark age barracks to feudal age archery
 
 namespace {
 
-constexpr const char *const languageFilePath{
+constexpr const char *languageFilePath{
     "/mnt/c/Program Files "
     "(x86)/Steam/steamapps/common/AoE2DE/resources/en/strings/key-value/key-value-strings-utf8.txt"};
-constexpr const char *const outputPath{"build"};
+constexpr const char *outputPath{"build"};
 
 enum class ItemType { unit, building, tech };
 
@@ -306,9 +443,9 @@ class Unit : public Creatable {
   public:
     Unit(const genie::Unit &data, const CreatableContext &creatableContext) : Creatable{data, creatableContext} {}
 
-    const Building *getTrainLocationPtr() const noexcept {
+    const Building *getTrainLocation() const noexcept {
         assert(isInitialized());
-        return trainLocationPtr;
+        return trainLocation;
     }
 
     // todo remove maybe_unused
@@ -323,14 +460,14 @@ class Unit : public Creatable {
         // Monk (125): 104
         if (auto locationID{getData().Creatable.TrainLocationID}; locationID != -1)
             try {
-                trainLocationPtr = &buildings.at(locationID).get();
+                trainLocation = &buildings.at(locationID).get();
             } catch (const std::out_of_range &) {
                 std::cout << getName() << " ("s << getID() << "): "s << locationID << '\n';
             }
     }
 
   private:
-    const Building *trainLocationPtr{};
+    const Building *trainLocation{};
 };
 
 class Building : public Creatable {
@@ -366,11 +503,11 @@ class Building : public Creatable {
 
 class Tech : public GenieItem<genie::Tech> {
   public:
-    Tech(int id, const genie::Tech &data, const genie::Effect *const effectDataPtr,
+    Tech(int id, const genie::Tech &data, const genie::Effect *effectData,
          const std::unordered_map<int, std::string> &nameMap)
         : Tech{id, data, nameMap, [&] {
                    Tech::EffectInfo val{};
-                   if (!effectDataPtr)
+                   if (!effectData)
                        return val;
                    static constexpr uint8_t typeResourceModifier{1};
                    static constexpr auto resourceCurrentAge{6};
@@ -380,12 +517,13 @@ class Tech : public GenieItem<genie::Tech> {
                    static constexpr auto modeEnable{1};
                    static constexpr uint8_t typeUpgradeUnit{3};
                    static constexpr auto modeAll{-1};
-                   for (const auto &command : effectDataPtr->EffectCommands)
+                   for (const auto &command : effectData->EffectCommands)
                        if (command.Type == typeResourceModifier && command.A == resourceCurrentAge) {
                            assert(command.B == modeSet && command.C == resourceMultiplyNone);
+                           // float value representing age (dark=0 to imperial=3)
                            val.ageSet.emplace(command.D);
                        } else if (command.Type == typeEnableDisableUnit && command.B == modeEnable)
-                           val.unitIDsEnabled.emplace(command.A);  // the enabled unit's ID
+                           val.unitIDsEnabled.emplace(command.A);
                        else if (command.Type == typeUpgradeUnit && command.C == modeAll)
                            val.unitIDsUpgraded.try_emplace(command.A, command.B);
                    return val;
@@ -417,6 +555,11 @@ class Tech : public GenieItem<genie::Tech> {
                 if (auto it3{buildings.find(id2)}; it3 != buildings.end())
                     buildingsUpgraded.try_emplace(it2->second, it3->second);
         // others are irrelevant
+    }
+
+    const Building *getResearchLocation() const noexcept {
+        assert(isInitialized());
+        return researchLocation;
     }
 
     // should either store this as a field, or, expose it as an iterator?
@@ -480,14 +623,14 @@ class Tech : public GenieItem<genie::Tech> {
     const std::unordered_set<int> unitIDsEnabled;
     const std::unordered_map<int, int> unitIDsUpgraded;
     const Building *researchLocation{};
-    std::unordered_set<std::reference_wrapper<const Tech>, Hash<Tech>, Equal<Tech>> requiredTechs;
-    std::unordered_set<std::reference_wrapper<const Unit>, Hash<Unit>, Equal<Unit>> unitsEnabled;
-    std::unordered_set<std::reference_wrapper<const Building>, Hash<Building>, Equal<Building>> buildingsEnabled;
+    std::unordered_set<std::reference_wrapper<const Tech>, Hash<Tech>, Equal<Tech>> requiredTechs{};
+    std::unordered_set<std::reference_wrapper<const Unit>, Hash<Unit>, Equal<Unit>> unitsEnabled{};
+    std::unordered_set<std::reference_wrapper<const Building>, Hash<Building>, Equal<Building>> buildingsEnabled{};
     std::unordered_map<std::reference_wrapper<const Unit>, std::reference_wrapper<const Unit>, Hash<Unit>, Equal<Unit>>
-        unitsUpgraded;
+        unitsUpgraded{};
     std::unordered_map<std::reference_wrapper<const Building>, std::reference_wrapper<const Building>, Hash<Building>,
                        Equal<Building>>
-        buildingsUpgraded;
+        buildingsUpgraded{};
 };
 
 // todo maybe we can build this list dynamically and have no need to hardcode?
@@ -639,71 +782,66 @@ void showCosts(const genie::DatFile *const df) {
     }()};
 
     const auto [units, buildings, techs]{[&] {
+        // init phase one
         const CreatableContext creatableContext{
             nameMap, creatablesToInclude, creatablesToExclude, nameOverride, typeOverride};
-        std::unordered_map<int, std::shared_ptr<Unit>> mutableUnitPtrs;
+        std::unordered_map<int, std::shared_ptr<Unit>> mutableUnits;
+        std::unordered_map<int, std::shared_ptr<Building>> mutableBuildings;
         std::unordered_map<int, std::reference_wrapper<const Unit>> unitRefs;
-        std::unordered_map<int, std::shared_ptr<Building>> mutableBuildingPtrs;
         std::unordered_map<int, std::reference_wrapper<const Building>> buildingRefs;
         for (const auto &data : df->Civs[0].Units) {
             if (Creatable::isBuilding(data, creatableContext)) {
-                const auto buildingPtr{std::make_shared<Building>(data, creatableContext)};
-                if (!buildingPtr->isRelevant())
+                const auto building{std::make_shared<Building>(data, creatableContext)};
+                if (!building->isRelevant())
                     continue;
-                mutableBuildingPtrs.try_emplace(buildingPtr->getID(), buildingPtr);
-                buildingRefs.try_emplace(buildingPtr->getID(), *buildingPtr);
+                mutableBuildings.try_emplace(building->getID(), building);
+                buildingRefs.try_emplace(building->getID(), *building);
             } else {
-                const auto unitPtr{std::make_shared<Unit>(data, creatableContext)};
-                if (!unitPtr->isRelevant())
+                const auto unit{std::make_shared<Unit>(data, creatableContext)};
+                if (!unit->isRelevant())
                     continue;
-                mutableUnitPtrs.try_emplace(unitPtr->getID(), unitPtr);
-                unitRefs.try_emplace(unitPtr->getID(), *unitPtr);
+                mutableUnits.try_emplace(unit->getID(), unit);
+                unitRefs.try_emplace(unit->getID(), *unit);
             }
         }
-        std::vector<std::shared_ptr<Tech>> mutableTechPtrs;
+        std::vector<std::shared_ptr<Tech>> mutableTechs;
         std::vector<std::reference_wrapper<const Tech>> techRefs;
         for (std::size_t id{0}; id < df->Techs.size(); ++id) {
-            const auto &tech{df->Techs[id]};
-            const genie::Effect *effectPtr{};
-            if (tech.EffectID != -1)
-                effectPtr = &df->Effects[tech.EffectID];
-            const auto techPtr{std::make_shared<Tech>(id, tech, effectPtr, nameMap)};
-            mutableTechPtrs.emplace_back(techPtr);
-            techRefs.emplace_back(*techPtr);
+            const auto &techData{df->Techs[id]};
+            const genie::Effect *effect{};
+            if (techData.EffectID != -1)
+                effect = &df->Effects[techData.EffectID];
+            const auto tech{std::make_shared<Tech>(id, techData, effect, nameMap)};
+            mutableTechs.emplace_back(tech);
+            techRefs.emplace_back(*tech);
         }
-
-        for (const auto &techPtr : mutableTechPtrs)
-            techPtr->init(unitRefs, buildingRefs, techRefs);
-        for (const auto &entry : mutableUnitPtrs)
+        // init phase two
+        for (const auto &tech : mutableTechs)
+            tech->init(unitRefs, buildingRefs, techRefs);
+        for (const auto &entry : mutableUnits)
             entry.second->init(unitRefs, buildingRefs, techRefs);
-        for (const auto &entry : mutableBuildingPtrs)
+        for (const auto &entry : mutableBuildings)
             entry.second->init(unitRefs, buildingRefs, techRefs);
-
+        // references no longer needed, mutation no longer needed
         return std::tuple{
-            std::unordered_map<int, std::shared_ptr<const Unit>>{mutableUnitPtrs.begin(), mutableUnitPtrs.end()},
-            std::unordered_map<int, std::shared_ptr<const Building>>{mutableBuildingPtrs.begin(),
-                                                                     mutableBuildingPtrs.end()},
-            std::vector<std::shared_ptr<const Tech>>{mutableTechPtrs.begin(), mutableTechPtrs.end()}};
+            std::unordered_map<int, std::shared_ptr<const Unit>>{mutableUnits.begin(), mutableUnits.end()},
+            std::unordered_map<int, std::shared_ptr<const Building>>{mutableBuildings.begin(), mutableBuildings.end()},
+            std::vector<std::shared_ptr<const Tech>>{mutableTechs.begin(), mutableTechs.end()}};
     }()};
-
-    // const auto &tech{techs.at(0)};
-    // const auto &tech2{techs.at(0)};
-    // const auto equal{tech == tech2};
 
     const std::vector<Age> ages{Age::dark, Age::feudal, Age::castle, Age::imperial};
 
-    // todo: consider scrapping effect loop and just looping through all techs. why not? only one effect per tech.
     // todo: when refactoring, these should be const after initialization
     std::unordered_set<Age> agesNotSeen(ages.begin(), ages.end());
     std::unordered_map<int16_t, Age> ageEffects;
     std::unordered_map<int16_t, std::unordered_set<int16_t>> enableEffects;
-    std::unordered_map<int16_t, std::unordered_map<int16_t, int16_t>> upgradeEffects;
+    // std::unordered_map<int16_t, std::unordered_map<int16_t, int16_t>> upgradeEffects;
     std::unordered_map<Age, std::unordered_set<int16_t>> unitsByAge;
     // consider looking for ALL upgrade effects & tracking those units
     //  might be needed e.g. to see house -> nomads house. is needed for cuman feudal SW -> SW.
     std::unordered_map<Age, std::unordered_map<int16_t, std::unordered_set<int16_t>>> ageUpgrades;
     // does not include tech-upgraded units
-    std::unordered_map<int16_t, std::unordered_map<Age, std::unordered_set<int16_t>>> unitUpgradesByAge;
+    // std::unordered_map<int16_t, std::unordered_map<Age, std::unordered_set<int16_t>>> unitUpgradesByAge;
     for (std::size_t effectID{0}; effectID < df->Effects.size(); ++effectID) {
         const auto &commands = df->Effects[effectID].EffectCommands;  // todo DRY
         for (const auto &c : commands) {
@@ -733,13 +871,13 @@ void showCosts(const genie::DatFile *const df) {
                             // refactored
                             unitsByAge[age].emplace(c2.B);
                             ageUpgrades[age][c2.A].emplace(c2.B);
-                            unitUpgradesByAge[c2.A][age].emplace(c2.B);
+                            // unitUpgradesByAge[c2.A][age].emplace(c2.B);
                         }
                 }
             } else if (c.Type == typeEnableDisableUnit && c.B == modeEnable)
                 enableEffects[effectID].emplace(c.A);  // the enabled unit's ID
-            else if (c.Type == typeUpgradeUnit && c.C == modeAll)
-                upgradeEffects[effectID].emplace(c.A, c.B);  // the two units' IDs
+            // else if (c.Type == typeUpgradeUnit && c.C == modeAll)
+            //     upgradeEffects[effectID].emplace(c.A, c.B);  // the two units' IDs
         }
     }
 
